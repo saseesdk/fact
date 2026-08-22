@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Claim Segregation</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f5f6f2;
+    --panel: #ffffff;
+    --ink: #1c2321;
+    --muted: #63695f;
+    --line: #d7dacd;
+    --claim-bg: #e2ece4;
+    --claim-border: #2f6f4e;
+    --claim-ink: #1f5238;
+    --skip-bg: #eceae2;
+    --skip-border: #9a9a8f;
+    --skip-ink: #63695f;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14161a;
+      --panel: #1c1f22;
+      --ink: #e7e8e2;
+      --muted: #9aa093;
+      --line: #33372f;
+      --claim-bg: #1f2f27;
+      --claim-border: #4c9573;
+      --claim-ink: #7ecba1;
+      --skip-bg: #24261f;
+      --skip-border: #55584c;
+      --skip-ink: #9aa093;
+    }
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: -apple-system, "Segoe UI", Arial, sans-serif;
+    line-height: 1.5;
+  }
+
+  .shell {
+    max-width: 860px;
+    margin: 0 auto;
+    padding: 2.5rem 1.5rem 4rem;
+  }
+
+  h1 {
+    font-size: 1.4rem;
+    margin: 0 0 0.25rem;
+  }
+
+  .subtitle {
+    color: var(--muted);
+    margin: 0 0 1.5rem;
+    font-size: 0.92rem;
+  }
+
+  textarea {
+    width: 100%;
+    min-height: 140px;
+    padding: 0.85rem;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--panel);
+    color: var(--ink);
+    font: inherit;
+    resize: vertical;
+  }
+
+  .actions {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-top: 0.75rem;
+  }
+
+  button {
+    font: inherit;
+    font-weight: 600;
+    padding: 0.55rem 1.1rem;
+    border-radius: 6px;
+    border: none;
+    background: var(--claim-border);
+    color: #fff;
+    cursor: pointer;
+  }
+
+  button:disabled {
+    opacity: 0.6;
+    cursor: default;
+  }
+
+  .status {
+    color: var(--muted);
+    font-size: 0.88rem;
+  }
+
+  .results {
+    margin-top: 2rem;
+    display: grid;
+    gap: 1.75rem;
+  }
+
+  .col h2 {
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+    margin: 0 0 0.6rem;
+  }
+
+  .sentence {
+    border-radius: 8px;
+    border: 1px solid;
+    padding: 0.65rem 0.9rem;
+    margin-bottom: 0.5rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 1rem;
+  }
+
+  .sentence.claim {
+    background: var(--claim-bg);
+    border-color: var(--claim-border);
+    color: var(--claim-ink);
+  }
+
+  .sentence.skip {
+    background: var(--skip-bg);
+    border-color: var(--skip-border);
+    color: var(--skip-ink);
+  }
+
+  .sentence .score {
+    font-variant-numeric: tabular-nums;
+    font-size: 0.78rem;
+    white-space: nowrap;
+    opacity: 0.85;
+  }
+
+  .empty {
+    color: var(--muted);
+    font-size: 0.9rem;
+    font-style: italic;
+  }
+</style>
+</head>
+<body>
+  <div class="shell">
+    <h1>Claim segregation</h1>
+    <p class="subtitle">
+      Paste text below. Each sentence is split out and classified as a
+      checkable factual claim or not, using the local NLI filter.
+    </p>
+
+    <textarea id="input" placeholder="The capital of Australia is Sydney. This is a beautiful country. The economy is on fire right now."></textarea>
+    <div class="actions">
+      <button id="run">Segregate</button>
+      <span class="status" id="status"></span>
+    </div>
+
+    <div class="results" id="results"></div>
+  </div>
+
+  <script>
+    const input = document.getElementById("input");
+    const runBtn = document.getElementById("run");
+    const statusEl = document.getElementById("status");
+    const resultsEl = document.getElementById("results");
+
+    function renderSentence(entry, kind) {
+      const div = document.createElement("div");
+      div.className = "sentence " + kind;
+      const text = document.createElement("span");
+      text.textContent = entry.sentence;
+      const score = document.createElement("span");
+      score.className = "score";
+      score.textContent = `fact ${entry.scores.fact.toFixed(2)} · opinion ${entry.scores.opinion.toFixed(2)}`;
+      div.append(text, score);
+      return div;
+    }
+
+    function renderColumn(title, entries, kind) {
+      const col = document.createElement("div");
+      col.className = "col";
+      const h2 = document.createElement("h2");
+      h2.textContent = `${title} (${entries.length})`;
+      col.appendChild(h2);
+      if (entries.length === 0) {
+        const empty = document.createElement("p");
+        empty.className = "empty";
+        empty.textContent = "None.";
+        col.appendChild(empty);
+      } else {
+        entries.forEach((e) => col.appendChild(renderSentence(e, kind)));
+      }
+      return col;
+    }
+
+    async function run() {
+      const text = input.value;
+      if (!text.trim()) return;
+      runBtn.disabled = true;
+      statusEl.textContent = "Running local NLI classifier…";
+      resultsEl.innerHTML = "";
+      try {
+        const res = await fetch("/api/segregate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text }),
+        });
+        if (!res.ok) throw new Error(`Server error (${res.status})`);
+        const data = await res.json();
+        resultsEl.appendChild(renderColumn("Factual claims", data.claims, "claim"));
+        resultsEl.appendChild(renderColumn("Not a claim", data.non_claims, "skip"));
+        statusEl.textContent = "";
+      } catch (err) {
+        statusEl.textContent = "Failed: " + err.message;
+      } finally {
+        runBtn.disabled = false;
+      }
+    }
+
+    runBtn.addEventListener("click", run);
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) run();
+    });
+  </script>
+</body>
+</html>

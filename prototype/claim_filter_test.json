@@ -1,0 +1,17 @@
+[
+  {"sentence": "The Eiffel Tower is located in Paris.", "expected": "factual claim"},
+  {"sentence": "Water freezes at 0 degrees Celsius.", "expected": "factual claim"},
+  {"sentence": "The Great Wall of China was built over several centuries.", "expected": "factual claim"},
+  {"sentence": "Napoleon Bonaparte was born on the island of Corsica.", "expected": "factual claim"},
+  {"sentence": "The stock market will crash in 2027.", "expected": "factual claim"},
+  {"sentence": "The capital of Australia is Sydney.", "expected": "factual claim"},
+  {"sentence": "The capital of France is Paris.", "expected": "factual claim"},
+  {"sentence": "Bengaluru has the best weather in India.", "expected": "opinion or subjective statement"},
+  {"sentence": "This is the greatest movie ever made.", "expected": "opinion or subjective statement"},
+  {"sentence": "Chocolate ice cream tastes better than vanilla.", "expected": "opinion or subjective statement"},
+  {"sentence": "Paris is a beautiful city.", "expected": "opinion or subjective statement"},
+  {"sentence": "The stock market is on fire today.", "expected": "metaphor or figurative expression"},
+  {"sentence": "He has a heart of stone.", "expected": "metaphor or figurative expression"},
+  {"sentence": "Time is money.", "expected": "metaphor or figurative expression"},
+  {"sentence": "She was drowning in paperwork.", "expected": "metaphor or figurative expression"}
+]

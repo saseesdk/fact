@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+prototype/test_results.json
+prototype/server.log
+.env
+venv/

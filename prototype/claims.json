@@ -1,0 +1,18 @@
+[
+  {"claim": "The capital of France is Paris.", "expected": "supported"},
+  {"claim": "Mount Everest is the tallest mountain above sea level on Earth.", "expected": "supported"},
+  {"claim": "Water boils at 100 degrees Celsius at sea level.", "expected": "supported"},
+  {"claim": "The Great Wall of China is located in China.", "expected": "supported"},
+  {"claim": "Albert Einstein developed the theory of general relativity.", "expected": "supported"},
+  {"claim": "The Amazon River is located in South America.", "expected": "supported"},
+  {"claim": "The capital of Australia is Sydney.", "expected": "contradicted"},
+  {"claim": "The Great Wall of China is visible from space with the naked eye.", "expected": "contradicted"},
+  {"claim": "Napoleon Bonaparte was born in Italy.", "expected": "contradicted"},
+  {"claim": "The sun revolves around the Earth.", "expected": "contradicted"},
+  {"claim": "Humans only use 10 percent of their brains.", "expected": "contradicted"},
+  {"claim": "The Eiffel Tower is located in London.", "expected": "contradicted"},
+  {"claim": "Bengaluru has the best weather in India.", "expected": "insufficient_evidence"},
+  {"claim": "There are more than 10 billion habitable exoplanets in the Milky Way.", "expected": "insufficient_evidence"},
+  {"claim": "Coffee is objectively better than tea.", "expected": "insufficient_evidence"},
+  {"claim": "The stock market will crash in 2027.", "expected": "insufficient_evidence"}
+]
