@@ -1,0 +1,18 @@
+[
+  {"claim": "Type 1 diabetes means the body makes little or no insulin.", "expected": "supported"},
+  {"claim": "High blood pressure is also called hypertension.", "expected": "supported"},
+  {"claim": "Antibiotics do not work against viral infections like the common cold.", "expected": "supported"},
+  {"claim": "The flu vaccine cannot give you the flu.", "expected": "supported"},
+  {"claim": "Insulin is a hormone made by the pancreas.", "expected": "supported"},
+  {"claim": "Type 2 diabetes is the most common form of diabetes.", "expected": "supported"},
+
+  {"claim": "Type 1 diabetes can be cured by drinking more water.", "expected": "contradicted"},
+  {"claim": "Vaccines cause autism.", "expected": "contradicted"},
+  {"claim": "Antibiotics are an effective treatment for the common cold.", "expected": "contradicted"},
+  {"claim": "Type 2 diabetes means the body makes no insulin at all.", "expected": "contradicted"},
+  {"claim": "Diabetes is not a real medical condition.", "expected": "contradicted"},
+
+  {"claim": "Take 500mg of ibuprofen every 4 hours for chronic pain.", "expected": "insufficient_evidence"},
+  {"claim": "Eating an apple a day guarantees you will never get sick.", "expected": "insufficient_evidence"},
+  {"claim": "A newly discovered gene variant found in 2025 causes gestational diabetes.", "expected": "insufficient_evidence"}
+]

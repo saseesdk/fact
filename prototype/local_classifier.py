@@ -20,6 +20,17 @@ MODEL_NAME = "MoritzLaurer/DeBERTa-v3-base-mnli-fever-anli"
 ENTAILMENT_THRESHOLD = 0.55
 CONTRADICTION_THRESHOLD = 0.55
 
+# Wikipedia evidence (this project's original source) is a short lead
+# paragraph, a few hundred characters. MedlinePlus evidence is a full
+# article (often 2000-5000+ chars) — feeding that whole thing to the
+# tokenizer every time, and relying on truncation=True to cut it down at
+# encode time, made each comparison dramatically slower (DeBERTa-v3's
+# tokenizer is not fast on long raw text) without adding useful signal: the
+# claim-relevant answer is almost always in the lead "What is X?" section,
+# not buried in prevention/treatment sections further down. Trim before
+# tokenizing instead of after.
+MAX_PREMISE_CHARS = 2000
+
 _tokenizer = None
 _model = None
 
@@ -36,7 +47,7 @@ def _load():
 def _nli_scores(premise, hypothesis):
     """Return {'entailment': p, 'neutral': p, 'contradiction': p} for one pair."""
     tokenizer, model = _load()
-    inputs = tokenizer(premise, hypothesis, return_tensors="pt", truncation=True)
+    inputs = tokenizer(premise[:MAX_PREMISE_CHARS], hypothesis, return_tensors="pt", truncation=True)
     with torch.no_grad():
         logits = model(**inputs).logits
     probs = torch.softmax(logits, dim=-1)[0]
