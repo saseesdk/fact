@@ -15,20 +15,42 @@ Prove the core loop works before building anything around it.
   subjective sentences.
 - Hand-built test sets proving the loop generalizes past demo claims.
 
-## Phase 1 — Trustworthy retrieval
+## Phase 1 — Trustworthy retrieval (scoped to medical, for now)
 
 The deck's own Tier 2/3 slides were left blank. This is where the product's
-credibility actually gets decided.
+credibility actually gets decided. Scope narrowed to **medical claims only**
+so retrieval quality can be nailed for one domain before generalizing —
+domain routing across medical/scientific/news/general is deferred until
+there's a second domain worth routing to.
 
-- **Tier 1** — arXiv, PubMed, Semantic Scholar, government open-data portals,
-  official org sites, Wikipedia (accepted only once its citation is checked,
-  not the prose itself).
-- **Tier 2** — wire services and structured fact-check organizations:
-  Reuters, AP, AFP, PolitiFact, Snopes, FactCheck.org.
-- **Tier 3** — general reputable web, used only to corroborate, never alone.
-- A domain router that reads the claim (medical / scientific / news /
-  general / computational) and picks which tiers to query, instead of one
-  hardcoded Wikipedia call.
+**Source of truth — medical, current:**
+- **MedlinePlus** (National Library of Medicine / NIH) — `medical_retrieval.py`,
+  shipped. Free, no API key, no registration
+  (https://medlineplus.gov/webservices.html), 85 req/min/IP. Picked over
+  Wikipedia for medical claims specifically because it's authored and
+  reviewed by NLM health professionals rather than open community editing —
+  a genuine Tier-1 "government portal" source, not just "Wikipedia but
+  official-sounding."
+- **PubMed** (via NCBI E-utilities, `eutils.ncbi.nlm.nih.gov`) — not yet
+  wired in. Free, no key required at 3 req/sec (10/sec with a free key).
+  The natural second source: MedlinePlus covers general medical facts well,
+  but claims about a *specific study or finding* need actual research
+  abstracts, which MedlinePlus doesn't have.
+- Old general-purpose Wikipedia retrieval (`retrieval.py`) still exists but
+  is no longer wired into `verify.py` — kept for when a non-medical domain
+  gets added back.
+
+**Known gap carried over from Phase 0:** retrieval is still naive (raw claim
+text as the search query). This means a false claim with no real matching
+source (e.g. "diabetes can be cured by drinking water") often returns zero
+evidence and resolves to `insufficient_evidence` rather than a confident
+`contradicted` — a safe failure mode, but not a confident one. Better
+retrieval (see below) is what fixes this.
+
+**Tier 2/3 for medical** (not built yet): Tier 2 = health-specific
+fact-checking orgs (Health Feedback / Science Feedback) and health-desk wire
+coverage (Reuters Health, AP Health); Tier 3 = general reputable health
+sites (Mayo Clinic, WebMD) used only to corroborate, never alone.
 
 Aim for the sky: a source registry with a live-scored reliability weight per
 domain, learned from historical accuracy — not a static hardcoded list.

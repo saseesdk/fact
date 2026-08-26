@@ -6,17 +6,23 @@ This repo currently contains only the **Phase 2 prototype** from that plan:
 a standalone script that proves out the core loop — `claim -> evidence retrieval -> verdict`
 — before any backend API, database, or Chrome extension gets built.
 
-First domain: **general/trivia facts**, checked against Wikipedia (the plan's
-Tier-1 source list). Narrower domains (programming docs, medical/PubMed) can
-be added later as separate retrieval modules with the same `retrieve_evidence()`
-shape.
+Current domain: **medical claims only** (see `ROADMAP.md` Phase 1), checked
+against MedlinePlus (`medical_retrieval.py`) — a National Library of
+Medicine / NIH source, picked over Wikipedia for medical claims specifically
+because it's authored and reviewed by health professionals, not open
+community editing. Other domains (general trivia via the older
+`retrieval.py`, programming docs, PubMed for research-specific claims) can
+be wired back in later as separate retrieval modules with the same
+`retrieve_evidence()` shape.
 
-Classification is fully local and free: a small open-source NLI model
-(`MoritzLaurer/DeBERTa-v3-base-mnli-fever-anli`, ~200M params, CPU-only, no
-GPU needed) trained on FEVER — the "claim + evidence -> supports/refutes/not
-enough info" dataset, which maps directly onto our verdict categories. No API
-key, no external LLM, no per-call cost, runs offline after the first model
-download.
+Claim segregation (fact vs. opinion) uses a dedicated zero-shot model
+(`MoritzLaurer/deberta-v3-base-zeroshot-v2.0`, `claim_filter.py`).
+Claim-vs-evidence verdict classification uses a separate NLI model trained
+on FEVER (`MoritzLaurer/DeBERTa-v3-base-mnli-fever-anli`, `local_classifier.py`)
+— the "claim + evidence -> supports/refutes/not enough info" task, which
+maps directly onto our verdict categories. Both are CPU-only, ~200M params
+or less, no API key, no external LLM, no per-call cost, fully offline after
+the first download.
 
 ## Setup
 

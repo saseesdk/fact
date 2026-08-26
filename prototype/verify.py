@@ -14,7 +14,7 @@ import sys
 
 from claim_filter import extract_factual_claims, split_sentences
 from local_classifier import classify
-from retrieval import retrieve_evidence
+from medical_retrieval import retrieve_evidence
 
 
 def verify(claim):
