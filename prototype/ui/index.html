@@ -122,6 +122,9 @@
     border: 1px solid;
     padding: 0.65rem 0.9rem;
     margin-bottom: 0.5rem;
+  }
+
+  .sentence-row {
     display: flex;
     justify-content: space-between;
     align-items: baseline;
@@ -144,6 +147,53 @@
     font-variant-numeric: tabular-nums;
     font-size: 0.78rem;
     white-space: nowrap;
+    opacity: 0.85;
+  }
+
+  .verify-btn {
+    margin-top: 0.55rem;
+    background: transparent;
+    border: 1px solid var(--claim-border);
+    color: var(--claim-ink);
+    font-size: 0.78rem;
+    font-weight: 600;
+    padding: 0.3rem 0.7rem;
+    border-radius: 5px;
+  }
+
+  .verify-btn:hover { background: var(--claim-border); color: #fff; }
+
+  .verdict {
+    margin-top: 0.65rem;
+    padding: 0.6rem 0.75rem;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    border-left: 3px solid;
+  }
+
+  .verdict-label {
+    font-weight: 700;
+    text-transform: uppercase;
+    font-size: 0.72rem;
+    letter-spacing: 0.04em;
+    display: block;
+    margin-bottom: 0.25rem;
+  }
+
+  .verdict.supported { background: #dff2e4; border-color: #2f6f4e; color: #1f5238; }
+  .verdict.contradicted { background: #f7dede; border-color: #a13d3d; color: #7a2626; }
+  .verdict.insufficient_evidence { background: #f1efe5; border-color: #9a8b4f; color: #6b5f30; }
+
+  @media (prefers-color-scheme: dark) {
+    .verdict.supported { background: #1f2f27; color: #7ecba1; }
+    .verdict.contradicted { background: #331f1f; color: #e08a8a; }
+    .verdict.insufficient_evidence { background: #2a2717; color: #d8c98a; }
+  }
+
+  .verdict .sources {
+    display: block;
+    margin-top: 0.3rem;
+    font-size: 0.78rem;
     opacity: 0.85;
   }
 
@@ -177,15 +227,73 @@
     const statusEl = document.getElementById("status");
     const resultsEl = document.getElementById("results");
 
+    function renderVerdict(container, result) {
+      if (result.error) {
+        container.textContent = "Failed: " + result.error;
+        container.className = "status";
+        return;
+      }
+      const box = document.createElement("div");
+      box.className = "verdict " + result.verdict;
+      const label = document.createElement("span");
+      label.className = "verdict-label";
+      label.textContent = `${result.verdict.replace("_", " ")} (confidence ${result.confidence})`;
+      const explanation = document.createElement("span");
+      explanation.textContent = result.explanation;
+      box.append(label, explanation);
+      if (result.matched_sources && result.matched_sources.length) {
+        const sources = document.createElement("span");
+        sources.className = "sources";
+        sources.textContent = "Source: " + result.matched_sources.join(", ");
+        box.appendChild(sources);
+      }
+      container.replaceChildren(box);
+    }
+
+    async function verifyClaim(sentence, resultEl, btn) {
+      btn.disabled = true;
+      btn.textContent = "Verifying…";
+      resultEl.textContent = "Retrieving evidence and comparing…";
+      resultEl.className = "status";
+      try {
+        const res = await fetch("/api/verify", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ claim: sentence }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || `Server error (${res.status})`);
+        renderVerdict(resultEl, data);
+      } catch (err) {
+        resultEl.textContent = "Failed: " + err.message;
+        resultEl.className = "status";
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "Verify";
+      }
+    }
+
     function renderSentence(entry, kind) {
       const div = document.createElement("div");
       div.className = "sentence " + kind;
+      const row = document.createElement("div");
+      row.className = "sentence-row";
       const text = document.createElement("span");
       text.textContent = entry.sentence;
       const score = document.createElement("span");
       score.className = "score";
       score.textContent = `fact ${entry.scores.fact.toFixed(2)} · opinion ${entry.scores.opinion.toFixed(2)}`;
-      div.append(text, score);
+      row.append(text, score);
+      div.appendChild(row);
+
+      if (kind === "claim") {
+        const btn = document.createElement("button");
+        btn.className = "verify-btn";
+        btn.textContent = "Verify";
+        const resultEl = document.createElement("div");
+        btn.addEventListener("click", () => verifyClaim(entry.sentence, resultEl, btn));
+        div.append(btn, resultEl);
+      }
       return div;
     }
 

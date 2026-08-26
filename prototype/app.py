@@ -9,6 +9,7 @@ from pathlib import Path
 from flask import Flask, jsonify, request, send_from_directory
 
 from claim_filter import segregate
+from verify import verify
 
 UI_DIR = Path(__file__).parent / "ui"
 
@@ -26,6 +27,14 @@ def api_segregate():
     if not text.strip():
         return jsonify({"claims": [], "non_claims": []})
     return jsonify(segregate(text))
+
+
+@app.post("/api/verify")
+def api_verify():
+    claim = (request.get_json(silent=True) or {}).get("claim", "")
+    if not claim.strip():
+        return jsonify({"error": "No claim provided."}), 400
+    return jsonify(verify(claim))
 
 
 if __name__ == "__main__":
