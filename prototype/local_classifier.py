@@ -79,6 +79,30 @@ def classify(claim, evidence):
 
     if (
         best_entailment["score"] >= ENTAILMENT_THRESHOLD
+        and best_contradiction["score"] >= CONTRADICTION_THRESHOLD
+        and best_entailment["source"] != best_contradiction["source"]
+    ):
+        # Two different sources each strongly assert the opposite of the
+        # other. Picking whichever raw score happens to be a fraction
+        # higher and silently discarding the other would hide a genuine
+        # disagreement between sources behind a confident-looking verdict —
+        # exactly the kind of overconfidence this pipeline already got
+        # burned by once (see the reverted single-keyword retrieval fallback
+        # in medical_retrieval.py). Surface the conflict instead of guessing.
+        return {
+            "verdict": "insufficient_evidence",
+            "confidence": round(min(best_entailment["score"], best_contradiction["score"]), 4),
+            "explanation": (
+                f"Conflicting evidence: '{best_entailment['source']}' entails the claim "
+                f"(entailment={best_entailment['score']:.2f}) while "
+                f"'{best_contradiction['source']}' contradicts it "
+                f"(contradiction={best_contradiction['score']:.2f})."
+            ),
+            "matched_sources": [best_entailment["source"], best_contradiction["source"]],
+        }
+
+    if (
+        best_entailment["score"] >= ENTAILMENT_THRESHOLD
         and best_entailment["score"] >= best_contradiction["score"]
     ):
         return {
@@ -105,10 +129,14 @@ def classify(claim, evidence):
             "matched_sources": [best_contradiction["source"]],
         }
 
-    winner = max(best_entailment["score"], best_contradiction["score"], best_neutral["score"])
     return {
         "verdict": "insufficient_evidence",
-        "confidence": round(1 - winner, 4) if winner < 1 else 0.0,
+        # Confidence in THIS verdict is how confident the model is that the
+        # relationship is genuinely neutral — not `1 - <whatever score
+        # happened to be highest>`, which was backwards: a high neutral
+        # score (real signal that no evidence source relates to the claim
+        # either way) previously produced a LOW displayed confidence.
+        "confidence": round(best_neutral["score"], 4),
         "explanation": (
             f"No evidence source was confident enough either way "
             f"(best entailment={best_entailment['score']:.2f}, "

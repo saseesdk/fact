@@ -1,0 +1,12 @@
+[
+  {"sentence": "Type 2 diabetes is caused by a combination of genetic and lifestyle factors.", "expected": "fact"},
+  {"sentence": "Studies suggest that regular exercise can lower blood pressure.", "expected": "fact"},
+  {"sentence": "The FDA approved the new drug after three phases of clinical trials.", "expected": "fact"},
+  {"sentence": "Patients with type 1 diabetes require daily insulin injections.", "expected": "fact"},
+  {"sentence": "This new supplement is a total game changer for your immune system.", "expected": "opinion"},
+  {"sentence": "In my experience, this medication works better than the generic version.", "expected": "opinion"},
+  {"sentence": "Doctors are just pushing pills instead of fixing the real problem.", "expected": "opinion"},
+  {"sentence": "This treatment is a miracle cure for chronic pain.", "expected": "opinion"},
+  {"sentence": "You should always listen to your gut when it comes to your health.", "expected": "opinion"},
+  {"sentence": "Big Pharma doesn't want you to know about natural remedies.", "expected": "opinion"}
+]

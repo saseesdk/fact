@@ -37,6 +37,16 @@ def api_verify():
     return jsonify(verify(claim))
 
 
+@app.errorhandler(Exception)
+def handle_unexpected_error(e):
+    # medical_retrieval.py already degrades network/parsing failures to []
+    # rather than raising, so this is a backstop for genuinely unexpected
+    # bugs — the UI's fetch() expects JSON, and an HTML error page would
+    # otherwise just show up as an opaque "Failed: Unexpected token '<'".
+    app.logger.exception("Unhandled error in %s", request.path)
+    return jsonify({"error": "Internal error — check server logs."}), 500
+
+
 if __name__ == "__main__":
     # use_reloader off: the reloader's monitor+worker process pair was
     # racing on Windows (multiple stale workers ending up bound around the

@@ -80,10 +80,18 @@ def _clean_html(raw):
 
 
 def _search(term, max_sources):
+    """Returns [] on any network/parsing failure rather than raising —
+    a MedlinePlus outage should degrade to insufficient_evidence (safe,
+    matches the existing "no evidence found" path) rather than crashing
+    verify() and surfacing a raw 500 to the UI."""
     params = {"db": "healthTopics", "term": term, "retmax": max_sources}
-    resp = requests.get(SEARCH_URL, params=params, timeout=10)
-    resp.raise_for_status()
-    return ET.fromstring(resp.content).findall(".//document")
+    try:
+        resp = requests.get(SEARCH_URL, params=params, timeout=10)
+        resp.raise_for_status()
+        return ET.fromstring(resp.content).findall(".//document")
+    except (requests.exceptions.RequestException, ET.ParseError) as e:
+        print(f"medical_retrieval: search failed for {term!r}: {e}")
+        return []
 
 
 def retrieve_evidence(claim, max_sources=3):
