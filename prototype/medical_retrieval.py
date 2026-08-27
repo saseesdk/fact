@@ -98,7 +98,23 @@ def retrieve_evidence(claim, max_sources=3):
     """Given a claim, return a list of {title, extract, url} evidence
     candidates from MedlinePlus health topics. Same shape as
     retrieval.retrieve_evidence() so local_classifier.classify() works
-    unchanged regardless of which source module verify.py wires up."""
+    unchanged regardless of which source module verify.py wires up.
+
+    Known limitation, deliberately NOT patched with a keyword filter: search
+    results occasionally include a genuinely unrelated page (e.g. "The flu
+    vaccine cannot give you the flu" matched a "Gastroenteritis" page; a
+    diabetes claim matched "Steatotic Liver Disease" and "Uterine Cancer").
+    A substantive-keyword-overlap filter was tried against both cases and
+    failed both: generic words ("give", "form") pass through too easily, and
+    a real topic word (e.g. "diabetes") can legitimately appear in an
+    unrelated page discussing it as a comorbidity, so simple keyword
+    presence can't distinguish "this page is about the claim" from "this
+    page mentions a word from the claim in passing." The actual mitigation
+    in place is local_classifier.classify()'s conflict-detection branch,
+    which catches the resulting bad signal downstream when it produces a
+    contradiction alongside a real source's entailment (or vice versa) —
+    fixing this at the retrieval layer would need real semantic relevance
+    scoring (e.g. embeddings), not string matching."""
     docs = []
     for query in _query_candidates(claim):
         docs = _search(query, max_sources)
