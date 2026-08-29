@@ -33,10 +33,14 @@ repos). This is a Windows machine, so the venv uses `Scripts/`, not `bin/`:
 ```bash
 python -m venv venv
 ./venv/Scripts/pip install -r requirements.txt
+./venv/Scripts/python -m spacy download en_core_web_sm
 ```
 
 First run downloads the NLI model (~370MB) from Hugging Face and caches it
-under `~/.cache/huggingface`; subsequent runs are offline.
+under `~/.cache/huggingface`; subsequent runs are offline. The spaCy model
+(~13MB, used for concept extraction — `concept_extraction.py`) is a
+separate one-time download via the command above, not covered by
+`pip install -r requirements.txt`.
 
 ## Usage
 
