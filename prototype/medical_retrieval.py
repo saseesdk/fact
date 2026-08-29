@@ -64,7 +64,7 @@ def _clean_html(raw):
     return re.sub(r"\s+", " ", text).strip()
 
 
-def _search(term, max_sources):
+def _search(term, max_sources, trace=None):
     """Returns [] on any network/parsing failure rather than raising —
     a MedlinePlus outage should degrade to insufficient_evidence (safe,
     matches the existing "no evidence found" path) rather than crashing
@@ -73,13 +73,16 @@ def _search(term, max_sources):
     try:
         resp = requests.get(SEARCH_URL, params=params, timeout=10)
         resp.raise_for_status()
-        return ET.fromstring(resp.content).findall(".//document")
+        docs = ET.fromstring(resp.content).findall(".//document")
     except (requests.exceptions.RequestException, ET.ParseError) as e:
         print(f"medical_retrieval: search failed for {term!r}: {e}")
-        return []
+        docs = []
+    if trace is not None:
+        trace.setdefault("queries_tried", []).append({"query": term, "hits": len(docs)})
+    return docs
 
 
-def retrieve_evidence(claim, max_sources=3):
+def retrieve_evidence(claim, max_sources=3, trace=None):
     """Given a claim, return a list of {title, extract, url} evidence
     candidates from MedlinePlus health topics. Same shape as
     retrieval.retrieve_evidence() so local_classifier.classify() works
@@ -100,11 +103,19 @@ def retrieve_evidence(claim, max_sources=3):
     contradiction alongside a real source's entailment (or vice versa) —
     fixing this at the retrieval layer would need real semantic relevance
     scoring (e.g. embeddings), not string matching."""
+    if trace is not None:
+        trace["concepts"] = extract_concepts(claim)
+
     docs = []
+    query_used = None
     for query in _query_candidates(claim):
-        docs = _search(query, max_sources)
+        docs = _search(query, max_sources, trace=trace)
         if docs:
+            query_used = query
             break
+
+    if trace is not None:
+        trace["query_used"] = query_used
 
     evidence = []
     for doc in docs:

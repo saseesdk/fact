@@ -202,6 +202,60 @@
     font-size: 0.9rem;
     font-style: italic;
   }
+
+  .details-toggle {
+    margin-top: 0.5rem;
+    background: transparent;
+    border: none;
+    color: var(--muted);
+    font-size: 0.76rem;
+    font-weight: 600;
+    padding: 0;
+    text-decoration: underline;
+    cursor: pointer;
+  }
+
+  .details {
+    margin-top: 0.5rem;
+    padding: 0.6rem 0.75rem;
+    border-radius: 6px;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    font-size: 0.78rem;
+  }
+
+  .details h4 {
+    margin: 0.6rem 0 0.3rem;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--muted);
+  }
+
+  .details h4:first-child { margin-top: 0; }
+
+  .details table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  .details td, .details th {
+    text-align: left;
+    padding: 0.2rem 0.4rem 0.2rem 0;
+    font-variant-numeric: tabular-nums;
+    vertical-align: top;
+  }
+
+  .details .tag {
+    display: inline-block;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 0.1rem 0.4rem;
+    margin: 0.1rem 0.25rem 0.1rem 0;
+  }
+
+  .details .miss { opacity: 0.55; text-decoration: line-through; }
 </style>
 </head>
 <body>
@@ -247,7 +301,118 @@
         sources.textContent = "Source: " + result.matched_sources.join(", ");
         box.appendChild(sources);
       }
-      container.replaceChildren(box);
+
+      const wrap = document.createElement("div");
+      wrap.append(box);
+
+      if (result.debug) {
+        const toggle = document.createElement("button");
+        toggle.className = "details-toggle";
+        toggle.textContent = "Show what happened behind the scenes ▾";
+        const panel = document.createElement("div");
+        panel.className = "details";
+        panel.style.display = "none";
+        panel.appendChild(renderDebug(result.debug));
+        toggle.addEventListener("click", () => {
+          const showing = panel.style.display !== "none";
+          panel.style.display = showing ? "none" : "block";
+          toggle.textContent = showing
+            ? "Show what happened behind the scenes ▾"
+            : "Hide details ▴";
+        });
+        wrap.append(toggle, panel);
+      }
+
+      container.replaceChildren(wrap);
+    }
+
+    function renderDebug(debug) {
+      const frag = document.createDocumentFragment();
+
+      if (debug.concepts && debug.concepts.length) {
+        const h = document.createElement("h4");
+        h.textContent = "Concepts extracted from claim";
+        const p = document.createElement("p");
+        p.style.margin = "0";
+        debug.concepts.forEach((c) => {
+          const tag = document.createElement("span");
+          tag.className = "tag";
+          tag.textContent = c;
+          p.appendChild(tag);
+        });
+        frag.append(h, p);
+      }
+
+      if (debug.queries_tried && debug.queries_tried.length) {
+        const h = document.createElement("h4");
+        h.textContent = "Searches tried against MedlinePlus";
+        const table = document.createElement("table");
+        debug.queries_tried.forEach((q) => {
+          const row = document.createElement("tr");
+          const used = q.query === debug.query_used;
+          const qCell = document.createElement("td");
+          qCell.textContent = (used ? "✓ " : "  ") + q.query;
+          if (!used && q.hits === 0) qCell.className = "miss";
+          const hitsCell = document.createElement("td");
+          hitsCell.textContent = `${q.hits} hit(s)`;
+          row.append(qCell, hitsCell);
+          table.appendChild(row);
+        });
+        frag.append(h, table);
+      }
+
+      if (debug.sources_checked && debug.sources_checked.length) {
+        const h = document.createElement("h4");
+        h.textContent = "Sources compared, with NLI scores";
+        const table = document.createElement("table");
+        const header = document.createElement("tr");
+        ["Source", "entailment", "contradiction", "neutral"].forEach((t) => {
+          const th = document.createElement("th");
+          th.textContent = t;
+          header.appendChild(th);
+        });
+        table.appendChild(header);
+        debug.sources_checked.forEach((s) => {
+          const row = document.createElement("tr");
+          const nameCell = document.createElement("td");
+          if (s.url) {
+            const a = document.createElement("a");
+            a.href = s.url;
+            a.target = "_blank";
+            a.rel = "noopener";
+            a.textContent = s.title;
+            nameCell.appendChild(a);
+          } else {
+            nameCell.textContent = s.title;
+          }
+          row.appendChild(nameCell);
+          [s.entailment, s.contradiction, s.neutral].forEach((v) => {
+            const td = document.createElement("td");
+            td.textContent = v.toFixed(2);
+            row.appendChild(td);
+          });
+          table.appendChild(row);
+        });
+        frag.append(h, table);
+      }
+
+      if (debug.distinctive_check) {
+        const dc = debug.distinctive_check;
+        const h = document.createElement("h4");
+        h.textContent = "Does the evidence address the claim's specifics?";
+        const p = document.createElement("p");
+        p.style.margin = "0";
+        const verdict = dc.passed ? "Yes" : "No";
+        let detail = dc.reason || "";
+        if (dc.claim_numbers) detail = `claim number(s) ${dc.claim_numbers.join(", ")} not found in evidence`;
+        if (dc.distinctive_terms) {
+          detail = `checked for: ${dc.distinctive_terms.join(", ")} (from concepts beyond "${dc.anchor_concept}")`;
+        }
+        p.textContent = `${verdict} — ${detail}`;
+        frag.append(h, p);
+      }
+
+      return frag;
     }
 
     async function verifyClaim(sentence, resultEl, btn) {

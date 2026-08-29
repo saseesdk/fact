@@ -59,7 +59,7 @@ def _nli_scores(premise, hypothesis):
     return {model.config.id2label[i]: float(p) for i, p in enumerate(probs)}
 
 
-def _addresses_claim_specifics(claim, evidence_extract):
+def _addresses_claim_specifics(claim, evidence_extract, trace=None):
     """The model can score high entailment (or contradiction) purely from
     general topical familiarity, without the evidence actually saying
     anything about the claim's specific assertion — confirmed directly:
@@ -117,21 +117,39 @@ def _addresses_claim_specifics(claim, evidence_extract):
 
     claim_numbers = set(re.findall(r"\b\d+\b", claim))
     if claim_numbers and not claim_numbers.issubset(set(re.findall(r"\b\d+\b", haystack))):
+        if trace is not None:
+            trace["distinctive_check"] = {
+                "reason": "claim number(s) missing from evidence",
+                "claim_numbers": sorted(claim_numbers),
+                "passed": False,
+            }
         return False
 
     concepts = extract_concepts(claim)
     if len(concepts) < 2:
+        if trace is not None:
+            trace["distinctive_check"] = {"reason": "fewer than 2 concepts, nothing to check", "passed": True}
         return True
     anchor_keywords = set(_keywords(concepts[0]))
     other_keywords = set()
     for concept in concepts[1:]:
         other_keywords |= set(_keywords(concept)) - anchor_keywords
     if not other_keywords:
+        if trace is not None:
+            trace["distinctive_check"] = {"reason": "no distinctive terms beyond anchor concept", "passed": True}
         return True
-    return any(term in haystack for term in other_keywords)
+    passed = any(term in haystack for term in other_keywords)
+    if trace is not None:
+        trace["distinctive_check"] = {
+            "anchor_concept": concepts[0],
+            "other_concepts": concepts[1:],
+            "distinctive_terms": sorted(other_keywords),
+            "passed": passed,
+        }
+    return passed
 
 
-def classify(claim, evidence):
+def classify(claim, evidence, trace=None):
     """Same input/output shape as the LLM-based classifier it replaces."""
     if not evidence:
         return {
@@ -145,8 +163,19 @@ def classify(claim, evidence):
     best_contradiction = {"score": -1.0, "source": None, "extract": None}
     best_neutral = {"score": -1.0, "source": None, "extract": None}
 
+    if trace is not None:
+        trace["sources_checked"] = []
+
     for e in evidence:
         scores = _nli_scores(premise=e["extract"], hypothesis=claim)
+        if trace is not None:
+            trace["sources_checked"].append({
+                "title": e["title"],
+                "url": e.get("url"),
+                "entailment": round(scores["entailment"], 4),
+                "contradiction": round(scores["contradiction"], 4),
+                "neutral": round(scores["neutral"], 4),
+            })
         if scores["entailment"] > best_entailment["score"]:
             best_entailment = {"score": scores["entailment"], "source": e["title"], "extract": e["extract"]}
         if scores["contradiction"] > best_contradiction["score"]:
@@ -182,7 +211,7 @@ def classify(claim, evidence):
         best_entailment["score"] >= ENTAILMENT_THRESHOLD
         and best_entailment["score"] >= best_contradiction["score"]
     ):
-        if _addresses_claim_specifics(claim, best_entailment["extract"]):
+        if _addresses_claim_specifics(claim, best_entailment["extract"], trace=trace):
             return {
                 "verdict": "supported",
                 "confidence": round(best_entailment["score"], 4),
@@ -208,7 +237,7 @@ def classify(claim, evidence):
         best_contradiction["score"] >= CONTRADICTION_THRESHOLD
         and best_contradiction["score"] > best_entailment["score"]
     ):
-        if _addresses_claim_specifics(claim, best_contradiction["extract"]):
+        if _addresses_claim_specifics(claim, best_contradiction["extract"], trace=trace):
             return {
                 "verdict": "contradicted",
                 "confidence": round(best_contradiction["score"], 4),

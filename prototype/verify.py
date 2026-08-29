@@ -18,10 +18,12 @@ from medical_retrieval import retrieve_evidence
 
 
 def verify(claim):
-    evidence = retrieve_evidence(claim)
-    result = classify(claim, evidence)
+    trace = {}
+    evidence = retrieve_evidence(claim, trace=trace)
+    result = classify(claim, evidence, trace=trace)
     result["claim"] = claim
     result["evidence_count"] = len(evidence)
+    result["debug"] = trace
     return result
 
 
