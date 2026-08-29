@@ -44,13 +44,34 @@ def _query_candidates(claim):
     bare "diabetes"), which surfaced a broad, only tangentially-related page
     and caused the NLI model to mistake lexical overlap for entailment.
     A concept like "Type 1 diabetes" or "the common cold" is meaningfully
-    narrower than the bare category name that caused those false positives."""
+    narrower than the bare category name that caused those false positives.
+
+    A leading bare quantity is stripped before searching (e.g. "10
+    paracetamol" -> "paracetamol") — confirmed directly that MedlinePlus's
+    keyword search treats "10" as just another search term to match, not a
+    dosage filter, so "10 paracetamol" surfaced two completely unrelated
+    pages (Chickenpox, Fifth Disease — both mention giving a child
+    acetaminophen for fever) while bare "paracetamol" correctly finds "Pain
+    Relievers", the actually relevant page. The number itself isn't lost:
+    local_classifier._addresses_claim_specifics() separately requires the
+    claim's numbers to literally appear in the winning evidence text before
+    accepting a verdict, so this only changes what's searched for, not what's
+    later required to match."""
     for concept in extract_concepts(claim):
-        yield concept
+        yield _strip_leading_quantity(concept)
     yield claim
     keywords = _keywords(claim)
     if keywords:
         yield " ".join(keywords)
+
+
+def _strip_leading_quantity(concept):
+    """Drop a leading bare number/dose token ("10", "500mg") from a search
+    term — see _query_candidates for why."""
+    words = concept.split()
+    while words and re.match(r"^\d", words[0]):
+        words.pop(0)
+    return " ".join(words) if words else concept
 
 
 def _clean_html(raw):
