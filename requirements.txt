@@ -2,3 +2,4 @@ requests
 torch
 transformers
 flask
+spacy

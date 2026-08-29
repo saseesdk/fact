@@ -13,8 +13,13 @@ Runs entirely offline after the first download (model is cached under
 ~/.cache/huggingface). No account, no API key, no per-call cost.
 """
 
+import re
+
 import torch
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
+
+from concept_extraction import extract_concepts
+from keywords import keywords as _keywords
 
 MODEL_NAME = "MoritzLaurer/DeBERTa-v3-base-mnli-fever-anli"
 ENTAILMENT_THRESHOLD = 0.55
@@ -54,6 +59,78 @@ def _nli_scores(premise, hypothesis):
     return {model.config.id2label[i]: float(p) for i, p in enumerate(probs)}
 
 
+def _addresses_claim_specifics(claim, evidence_extract):
+    """The model can score high entailment (or contradiction) purely from
+    general topical familiarity, without the evidence actually saying
+    anything about the claim's specific assertion — confirmed directly:
+    "Type 1 diabetes can be cured by drinking more water" scored entailment
+    0.95 against the Diabetes page, which never mentions "water" or "cure"
+    anywhere in the compared text.
+
+    First attempt at this check compared claim keywords against the
+    *evidence title's* keywords, which was fragile: it depends on the exact
+    wording of whichever specific page happened to win, not on the claim
+    itself. Confirmed failing directly — when the winning source was the
+    generic "Diabetes" page (title = just that one word), "type" and "1"
+    from the claim weren't excluded as topic words, and both trivially
+    matched the evidence (which obviously discusses "Type 1"/"Type 2" as
+    categories), letting the check pass even though the actually distinctive
+    words ("cured", "drinking", "water") were still absent.
+
+    Anchoring on the claim's own primary extracted concept instead (Phase
+    1.1, concept_extraction.py) fixes the title-dependence, but a second
+    problem showed up right behind it: the anchor concept isn't reliably
+    "the general topic" — for "Take 500mg of ibuprofen every 4 hours for
+    chronic pain", concept extraction ranked "500mg" as the top concept
+    (highest content-token score), so THAT got excluded as if it were the
+    topic, leaving only generic words ("take", "pain", "chronic", "every")
+    as "distinctive" — all of which trivially appear on any Chronic Pain
+    page, letting a fabricated dosage regimen through. Same failure for "A
+    newly discovered gene variant found in 2025 causes gestational
+    diabetes": "diabetes"/"gestational" trivially matched a real Diabetes
+    and Pregnancy page, even though "2025"/"causes"/"found" — the actual
+    fabricated-study assertion — did not.
+
+    Numbers (dosages, years, statistics) turn out to be a much more
+    reliable signal than word-overlap for this specific problem: a general
+    topic page essentially never happens to independently restate an
+    arbitrary specific number unless it's actually confirming that fact, so
+    treat "does the evidence contain the claim's numbers" as a hard
+    requirement, before the softer word-based check.
+
+    That word-based check also had to change shape: comparing the claim's
+    full keyword bag against just the anchor concept's keywords let a lone
+    leftover word decide the outcome even when it wasn't a real concept at
+    all — confirmed failing on "The flu vaccine cannot give you the flu"
+    (a legitimate, correctly-matched "Flu Shot" page): concepts were
+    ['The flu vaccine', 'the flu'], so after removing the anchor's words
+    ("flu", "vaccine") the only leftover was "give" — a generic verb that
+    was never actually part of any extracted concept, just incidental
+    sentence filler, and it happened not to appear in the evidence text,
+    wrongly rejecting a correct match. Scoping the check to words that
+    belong to an actual *other extracted concept* (not just any leftover
+    word from the raw sentence) fixes this: "the flu" contributes nothing
+    new beyond the anchor, so there's nothing left to require — while
+    "more water" (for the diabetes claim) still contributes a genuine new
+    concept ("water") that has to be addressed."""
+    haystack = evidence_extract[:MAX_PREMISE_CHARS].lower()
+
+    claim_numbers = set(re.findall(r"\b\d+\b", claim))
+    if claim_numbers and not claim_numbers.issubset(set(re.findall(r"\b\d+\b", haystack))):
+        return False
+
+    concepts = extract_concepts(claim)
+    if len(concepts) < 2:
+        return True
+    anchor_keywords = set(_keywords(concepts[0]))
+    other_keywords = set()
+    for concept in concepts[1:]:
+        other_keywords |= set(_keywords(concept)) - anchor_keywords
+    if not other_keywords:
+        return True
+    return any(term in haystack for term in other_keywords)
+
+
 def classify(claim, evidence):
     """Same input/output shape as the LLM-based classifier it replaces."""
     if not evidence:
@@ -64,18 +141,18 @@ def classify(claim, evidence):
             "matched_sources": [],
         }
 
-    best_entailment = {"score": -1.0, "source": None}
-    best_contradiction = {"score": -1.0, "source": None}
-    best_neutral = {"score": -1.0, "source": None}
+    best_entailment = {"score": -1.0, "source": None, "extract": None}
+    best_contradiction = {"score": -1.0, "source": None, "extract": None}
+    best_neutral = {"score": -1.0, "source": None, "extract": None}
 
     for e in evidence:
         scores = _nli_scores(premise=e["extract"], hypothesis=claim)
         if scores["entailment"] > best_entailment["score"]:
-            best_entailment = {"score": scores["entailment"], "source": e["title"]}
+            best_entailment = {"score": scores["entailment"], "source": e["title"], "extract": e["extract"]}
         if scores["contradiction"] > best_contradiction["score"]:
-            best_contradiction = {"score": scores["contradiction"], "source": e["title"]}
+            best_contradiction = {"score": scores["contradiction"], "source": e["title"], "extract": e["extract"]}
         if scores["neutral"] > best_neutral["score"]:
-            best_neutral = {"score": scores["neutral"], "source": e["title"]}
+            best_neutral = {"score": scores["neutral"], "source": e["title"], "extract": e["extract"]}
 
     if (
         best_entailment["score"] >= ENTAILMENT_THRESHOLD
@@ -105,28 +182,52 @@ def classify(claim, evidence):
         best_entailment["score"] >= ENTAILMENT_THRESHOLD
         and best_entailment["score"] >= best_contradiction["score"]
     ):
+        if _addresses_claim_specifics(claim, best_entailment["extract"]):
+            return {
+                "verdict": "supported",
+                "confidence": round(best_entailment["score"], 4),
+                "explanation": (
+                    f"Evidence from '{best_entailment['source']}' entails the claim "
+                    f"(entailment={best_entailment['score']:.2f})."
+                ),
+                "matched_sources": [best_entailment["source"]],
+            }
         return {
-            "verdict": "supported",
-            "confidence": round(best_entailment["score"], 4),
+            "verdict": "insufficient_evidence",
+            "confidence": round(1 - best_entailment["score"], 4),
             "explanation": (
-                f"Evidence from '{best_entailment['source']}' entails the claim "
-                f"(entailment={best_entailment['score']:.2f})."
+                f"'{best_entailment['source']}' scored high entailment "
+                f"(entailment={best_entailment['score']:.2f}) but never actually "
+                f"addresses what the claim specifically asserts beyond its general "
+                f"topic — likely a topical-familiarity false positive, not real support."
             ),
-            "matched_sources": [best_entailment["source"]],
+            "matched_sources": [],
         }
 
     if (
         best_contradiction["score"] >= CONTRADICTION_THRESHOLD
         and best_contradiction["score"] > best_entailment["score"]
     ):
+        if _addresses_claim_specifics(claim, best_contradiction["extract"]):
+            return {
+                "verdict": "contradicted",
+                "confidence": round(best_contradiction["score"], 4),
+                "explanation": (
+                    f"Evidence from '{best_contradiction['source']}' contradicts the claim "
+                    f"(contradiction={best_contradiction['score']:.2f})."
+                ),
+                "matched_sources": [best_contradiction["source"]],
+            }
         return {
-            "verdict": "contradicted",
-            "confidence": round(best_contradiction["score"], 4),
+            "verdict": "insufficient_evidence",
+            "confidence": round(1 - best_contradiction["score"], 4),
             "explanation": (
-                f"Evidence from '{best_contradiction['source']}' contradicts the claim "
-                f"(contradiction={best_contradiction['score']:.2f})."
+                f"'{best_contradiction['source']}' scored high contradiction "
+                f"(contradiction={best_contradiction['score']:.2f}) but never actually "
+                f"addresses what the claim specifically asserts beyond its general "
+                f"topic — likely a topical-familiarity false positive, not a real refutation."
             ),
-            "matched_sources": [best_contradiction["source"]],
+            "matched_sources": [],
         }
 
     return {

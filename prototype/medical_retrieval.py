@@ -22,46 +22,31 @@ import xml.etree.ElementTree as ET
 
 import requests
 
+from concept_extraction import extract_concepts
+from keywords import keywords as _keywords
+
 SEARCH_URL = "https://wsearch.nlm.nih.gov/ws/query"
-
-# MedlinePlus search returns zero results for long natural-language claims
-# even when a clearly relevant page exists — confirmed directly: "Antibiotics
-# do not work against viral infections like the common cold" (13 words) gets
-# 0 results, but "antibiotics common cold" (3 keywords) gets 13. Stripping
-# stopwords/negation as a fallback query recovers exactly this failure mode.
-_STOPWORDS = {
-    "a", "an", "the", "is", "are", "was", "were", "be", "been", "being",
-    "do", "does", "did", "not", "no", "cannot", "can", "could", "should",
-    "would", "will", "to", "of", "in", "on", "at", "for", "and", "or",
-    "but", "with", "like", "than", "that", "this", "these", "those", "it",
-    "its", "you", "your", "i", "we", "they", "he", "she", "them", "as",
-    "also", "means", "mean", "if", "so", "than", "have", "has", "had",
-    "by", "more", "some", "any", "all",
-}
-
-
-def _keywords(claim):
-    words = re.findall(r"[A-Za-z0-9]+", claim.lower())
-    return [w for w in words if w not in _STOPWORDS]
 
 
 def _query_candidates(claim):
-    """Yield progressively narrower queries. MedlinePlus search appears to
-    require most/all terms to co-occur in a document — confirmed directly:
-    'diabetes cured water' (3 words) gets 0 results even though 'diabetes
-    water' and 'diabetes cure' each get 30+ results individually.
+    """Yield queries in priority order: extracted concepts first (Phase 1.1,
+    concept_extraction.py), each tried individually and most-salient-first,
+    then the old raw-claim / stopword-stripped queries as a last resort.
 
-    Deliberately stops at the stopword-stripped query and does NOT fall back
-    further to a single bare keyword. That was tried and measured worse:
-    a single generic term (e.g. just "diabetes") surfaces a broad, only
-    tangentially-related page, and the NLI model reliably mistakes lexical
-    overlap for entailment — e.g. "Type 1 diabetes can be cured by drinking
-    water" scored 0.95 "supported" against the general Diabetes page, and
-    "Antibiotics are an effective treatment for the common cold" scored 0.88
-    "supported" despite the actual antibiotics evidence explicitly saying
-    the opposite. For a medical fact-checker, a confident wrong verdict is
-    worse than insufficient_evidence — only widen the query while there's
-    still a reasonable chance the result is specific to the claim."""
+    Concepts are tried one at a time rather than joined together, since
+    MedlinePlus search appears to require most/all terms in a query to
+    co-occur in a document — confirmed directly: 'diabetes cured water' (3
+    words) gets 0 results even though 'diabetes water' and 'diabetes cure'
+    each get 30+ results individually. A single extracted concept is
+    usually specific enough to be safe on its own (e.g. "Sinusitis" finds
+    the exact right page directly) — this is different from the single
+    *generic keyword* fallback that was tried and reverted earlier (e.g.
+    bare "diabetes"), which surfaced a broad, only tangentially-related page
+    and caused the NLI model to mistake lexical overlap for entailment.
+    A concept like "Type 1 diabetes" or "the common cold" is meaningfully
+    narrower than the bare category name that caused those false positives."""
+    for concept in extract_concepts(claim):
+        yield concept
     yield claim
     keywords = _keywords(claim)
     if keywords:
