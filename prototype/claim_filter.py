@@ -65,20 +65,41 @@ FACTUAL_LABEL = "fact"
 OPINION_MARGIN = 0.05
 
 
+_SENTENCE_BOUNDARY = re.compile(
+    r"(?<=[.!?])(?:\[\d+\])*\s+"          # normal case: punctuation (+ optional
+                                            # citations, e.g. Wikipedia's "life.[4][5]")
+                                            # followed by whitespace
+    r"|(?<=[.!?])(?:\[\d+\])*(?=[A-Z])"    # punctuation directly followed by a
+                                            # capital letter, no space at all —
+                                            # copy-pasted web text routinely loses
+                                            # the space/newline between a sentence
+                                            # and the next heading ("provider.Common
+                                            # Causes")
+    r"|(?<=[a-z]{2})(?=[A-Z][a-z])"        # two headings glued directly together
+                                            # with no punctuation whatsoever
+                                            # ("CausesViral infections") — requires
+                                            # 2+ lowercase letters before the
+                                            # boundary and a capital+lowercase
+                                            # after, so short acronym prefixes like
+                                            # "mRNA" or "pH" aren't split apart
+)
+
+
 def split_sentences(text):
     """Naive sentence splitter — good enough for the MVP prototype stage.
 
-    Allows citation brackets ("life.[4][5]") between the sentence-ending
-    punctuation and the following whitespace, since Wikipedia-style text
-    (this project's Tier-1 source) glues them directly onto the period —
-    without this, the plain (?<=[.!?])\\s+ split fails to break there and
-    silently merges multiple sentences, sometimes whole paragraphs, into one
-    oversized entry.
+    Beyond the textbook "punctuation + space" case, this also recovers
+    sentence/heading boundaries from text pasted out of a rendered web page,
+    where block-level elements (paragraphs, headings) routinely lose their
+    separating whitespace entirely once flattened to plain text — confirmed
+    directly: a real pasted health article collapsed into a single ~700-word
+    "sentence" and broke retrieval entirely, because every boundary in it was
+    either "punctuation.NextWord" or "HeadingWordNextHeading" with zero space.
     """
     text = text.strip()
     if not text:
         return []
-    sentences = re.split(r"(?<=[.!?])(?:\[\d+\])*\s+", text)
+    sentences = _SENTENCE_BOUNDARY.split(text)
     return [s.strip() for s in sentences if s.strip()]
 
 
