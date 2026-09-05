@@ -40,12 +40,36 @@ there's a second domain worth routing to.
   is no longer wired into `verify.py` — kept for when a non-medical domain
   gets added back.
 
-**Known gap carried over from Phase 0:** retrieval is still naive (raw claim
-text as the search query). This means a false claim with no real matching
-source (e.g. "diabetes can be cured by drinking water") often returns zero
-evidence and resolves to `insufficient_evidence` rather than a confident
-`contradicted` — a safe failure mode, but not a confident one. Better
-retrieval (see below) is what fixes this.
+**Phase 1.1/1.2 — concept extraction + targeted retrieval (shipped):** the
+original "naive retrieval" gap (raw claim text as the search query) is fixed.
+`concept_extraction.py` (spaCy noun chunks) pulls the claim's actual topical
+concepts and each is tried individually as a MedlinePlus search term, instead
+of the raw sentence or a single bare category keyword (which was tried and
+reverted — it surfaced broad tangential pages and caused false-positive
+lexical-overlap matches). A leading bare quantity ("10 paracetamol") is
+stripped before searching.
+
+**Phase 1.3 — the trust gate (shipped, in `local_classifier.py`):** better
+retrieval alone made false positives *worse*, not better (a baseline test
+with concept-retrieval but no safeguard scored 64%, worse than before, with
+4 confidently-wrong verdicts) — an NLI model can score high entailment or
+contradiction from general topical familiarity with a page without that page
+ever addressing the claim's specific assertion. `_addresses_claim_specifics()`
+now hard-requires the claim's own numbers (dosages, years, statistics) to
+appear in the evidence, and requires at least one term from a concept beyond
+the claim's primary one to be present, before accepting a "supported" or
+"contradicted" verdict — otherwise it downgrades to `insufficient_evidence`
+with an explanation instead of reporting a confident false positive.
+
+**Known remaining gap:** MedlinePlus's consumer-health prose usually doesn't
+state precise numeric thresholds (e.g. "how many tablets is an overdose")
+even on the correct page, so dosage-specific safety claims correctly resolve
+to `insufficient_evidence` rather than a guess. Fixing this needs a
+structured drug-label source — **NIH DailyMed** (confirmed free, no key,
+reachable) has an "Overdosage" section with real thresholds; not yet wired
+in, pending a decision on scope (picking a canonical label out of ~4,800
+near-duplicate OTC product entries per drug name is real new work, not a
+quick patch).
 
 **Tier 2/3 for medical** (not built yet): Tier 2 = health-specific
 fact-checking orgs (Health Feedback / Science Feedback) and health-desk wire
@@ -65,6 +89,15 @@ The deck promises six outcomes, not three. Close that gap.
 - Add an embedding-similarity layer for ranking evidence candidates, separate
   from the NLI entailment step used for the final verdict.
 - Per-verdict confidence calibration instead of one global threshold.
+
+**Phase 2.x — transparency (partially shipped):** every verdict in the UI
+now has a "Show what happened behind the scenes" toggle exposing the actual
+trace (`verify()`'s `debug` field) — concepts extracted, every MedlinePlus
+query tried and which hit, every source's raw entailment/contradiction/
+neutral scores, and the distinctive-terms gate's pass/fail reasoning. This is
+the early version of the Phase 7 "transparency panel" goal below, built early
+because it turned out to be the tool needed to debug retrieval/scoring
+problems during Phase 1, not just a nice-to-have for end users.
 
 Aim for the sky: every verdict ships with a quoted sentence of evidence and a
 one-line reason, so the user can audit the audit instead of trusting a label.
@@ -130,7 +163,8 @@ into something rigorous.
 - Citation verification: confirm a Wikipedia citation actually supports the
   sentence it's attached to, not just that the citation exists.
 - A transparency panel listing every source checked and why each was trusted
-  or rejected.
+  or rejected — an early version of this shipped in Phase 2.x; this phase is
+  about extending it past medical/MedlinePlus to every source tier.
 
 Aim for the sky: a feedback loop — expert or crowd review of disputed
 verdicts — that continuously improves the trust-tier weights instead of
