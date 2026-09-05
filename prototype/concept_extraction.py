@@ -45,11 +45,26 @@ def extract_concepts(claim, max_concepts=3):
 
     A leading "Heading (Alt name): ..." pattern is extracted first and
     always ranked highest, since it's usually the exact disease/condition
-    name. Remaining slots are filled by noun chunks, scored by count of
-    non-stopword tokens (a longer, more specific phrase like "severe sinus
-    congestion" is a better search anchor than a short generic one like
-    "pressure") — except the scoring only applies among chunks; the heading
-    match always wins regardless of its own (often short) length.
+    name. Remaining slots are filled by noun chunks, scored first by whether
+    the chunk contains a proper noun, then by count of non-stopword tokens
+    (a longer, more specific phrase like "severe sinus congestion" is a
+    better search anchor than a short generic one like "pressure") — except
+    the scoring only applies among chunks; the heading match always wins
+    regardless of its own (often short) length.
+
+    The proper-noun preference was added once this stopped being
+    medical-only: confirmed directly that "The capital of Australia is
+    Sydney" ranked "The capital" (1 content token, earliest in the
+    sentence) above "Australia" and "Sydney" (also 1 content token each,
+    later in the sentence) under a pure count-then-position tiebreak, and
+    since retrieval stops at the first query that returns any hits at all,
+    the actually distinctive entities never even got tried — "The capital"
+    alone matches plenty of unrelated pages. A named entity ("Australia",
+    "Napoleon Bonaparte") is essentially always a better search anchor than
+    a same-length generic noun phrase ("the capital", "the tallest
+    mountain"); this didn't come up during medical-only tuning because
+    medical noun phrases are rarely proper nouns in the first place, so the
+    ordering there is unaffected.
     """
     concepts = []
     seen = set()
@@ -75,11 +90,12 @@ def extract_concepts(claim, max_concepts=3):
         text = chunk.text.strip(" ()[]{}:;,.\"'")
         if len(text) < 3:
             continue
-        scored.append((len(content_tokens), chunk.start, text))
+        has_propn = any(t.pos_ == "PROPN" for t in content_tokens)
+        scored.append((has_propn, len(content_tokens), chunk.start, text))
 
-    scored.sort(key=lambda x: (-x[0], x[1]))
+    scored.sort(key=lambda x: (not x[0], -x[1], x[2]))
 
-    for _, _, text in scored:
+    for _, _, _, text in scored:
         if len(concepts) >= max_concepts:
             break
         key = text.lower()

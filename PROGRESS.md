@@ -1,0 +1,105 @@
+# Progress log
+
+Running log of what's been decided and done, session by session. `ROADMAP.md`
+is the long-term phase plan; `README.md` is setup/usage; this file is "what
+actually happened and what's still open" — read this first after a break.
+
+## 2026-09-05 — General-domain pivot
+
+**Decision:** reviewed a new MVP deck (`IDEATION 1.pptx`) that specified a
+general-domain, LLM + live-web-search architecture. Given three options
+(A: paid-LLM + live search, B: keep medical-only/free, C: general-domain but
+still free/local), the user chose **C**: drop the medical-only restriction,
+keep everything local/free (no LLM API calls), add general web search
+alongside MedlinePlus.
+
+**Also decided:** switch this repo to a branch + PR workflow instead of
+pushing directly to `master` (see [[feedback_pr_workflow_fact]] in Claude's
+memory). `gh auth login` not yet run, so PRs get opened manually via the
+compare-link GitHub returns.
+
+### What was built
+- `query_strategy.py` — shared concept-based query-building logic, extracted
+  from `medical_retrieval.py` so `retrieval.py` (Wikipedia) could reuse the
+  exact same validated approach instead of drifting.
+- `retrieval.py` (Wikipedia) rewritten: same concept-based query strategy as
+  MedlinePlus, evidence tagged with `"origin": "Wikipedia"`.
+- `verify.py` now fans out to **both** `medical_retrieval` and `retrieval`
+  (Wikipedia) for every claim — no domain routing yet, just compare
+  evidence from both and let `local_classifier.classify()` pick the best
+  match regardless of source.
+- `local_classifier.py`: source identity for the conflict-detection check is
+  now `(title, origin)` instead of just `title`, since two sources could
+  coincidentally share a title.
+
+### Bugs found and fixed during validation
+1. **Concept ranking picked generic nouns over named entities.** "The
+   capital of Australia is Sydney" ranked "The capital" above "Australia"/
+   "Sydney" (tied token-count, earliest-position tiebreak) — and since
+   retrieval stops at the first query with any hits, the real entities never
+   got tried. Fixed in `concept_extraction.py`: chunks containing a proper
+   noun (`token.pos_ == "PROPN"`) now rank above same-length generic chunks.
+2. **Wikipedia's REST summary endpoint is too short.** It returns only the
+   first ~500-char paragraph, which for "Australia" never mentions
+   "Canberra" at all. Switched to the full lead-section extract
+   (`action=query&prop=extracts&exintro=true`, ~2700 chars for Australia) —
+   same "richer article, truncate before tokenizing" pattern already used
+   for MedlinePlus.
+
+### Test results (after both fixes above)
+- **General domain** (`claims.json`, 16 cases, `test_claims.py`): **9/16
+  (56%)**. First-ever measurement under the new architecture — no prior
+  baseline to compare against for this specific set.
+- **Medical** (`medical_claims_test.json`, 14 cases, `test_verify_medical.py`):
+  **10/14 (71%)** — matches the pre-pivot baseline exactly, zero dangerous
+  verdicts among the 4 failures (all safe `insufficient_evidence`). The
+  two-source fan-out is pulling in genuinely useful Wikipedia evidence for
+  some medical claims too (e.g. "Insulin is a hormone made by the pancreas"
+  matched via Wikipedia's Insulin page, not MedlinePlus) without regressing
+  anything. **No regression from the general-domain pivot.**
+
+### New failure class found (not yet fixed)
+**"The sun revolves around the Earth" scored `supported` in the batch run**
+(a false claim marked true — dangerous). Root cause confirmed directly: the
+real Wikipedia "Sun" article contains "The Sun orbits the Galactic Center" —
+structurally identical to the claim's "the sun revolves around ___". The NLI
+model appears to match the *sentence pattern* ("Sun orbits X") without
+checking that X is actually "Earth." This is a different bug class than the
+ones already fixed (missing distinctive terms / missing numbers) — "Earth"
+genuinely does appear elsewhere in the evidence (an unrelated
+distance-measurement sentence), so the existing distinctive-terms gate
+passes it. This is a **relational/argument-binding confusion**, not a
+topic-overlap problem, and isn't something the current gates catch.
+
+A re-run of just this one claim (outside the batch) actually landed on
+`insufficient_evidence` instead, via the conflict-detection branch (a
+MedlinePlus "Tanning" page scored 0.99 entailment, unrelated Wikipedia "The
+Sun (disambiguation)" scored 0.82 contradiction — both noise, correctly
+caught as a conflict). This means the outcome is **sensitive to which top-3
+search results a live query happens to return**, which can vary run to run —
+a new source of flakiness that a pure single-curated-source pipeline
+(MedlinePlus-only) didn't have to deal with.
+
+**Not yet decided:** whether to raise `ENTAILMENT_THRESHOLD`/
+`CONTRADICTION_THRESHOLD` (currently both 0.55) and do a full revalidation
+pass, or document this as a known limitation of general-purpose NLI for now.
+Flagged to the user, pending their call — raising thresholds blind, without
+a full re-test cycle, risks silently regressing already-validated cases, and
+each full test cycle costs ~15-20 minutes on this RAM-constrained machine.
+
+**Recommendation:** medical didn't regress (still 10/14, still zero
+dangerous verdicts), so the pivot itself is safe to ship as-is. Before
+touching global thresholds, worth triaging the other 5 general-suite
+failures first (water boiling point, Einstein/relativity, Great Wall visible
+from space, Napoleon born in Italy, 10%-of-brain myth, Eiffel Tower in
+London) to see how many are the same relational-confusion class vs. simply
+"evidence never retrieved" — those need different fixes, and lumping them
+together into one threshold change would be guessing.
+
+### Known limitations carried forward
+- MedlinePlus is still queried for every claim (including obviously
+  non-medical ones) — costs one cheap wasted request per claim, not
+  incorrect behavior, but worth knowing if request volume ever matters.
+- Live web search (Wikipedia, MedlinePlus) means retrieval results can shift
+  over time or between runs, unlike a fixed offline fixture — accuracy
+  numbers here are a snapshot, not a permanent guarantee.

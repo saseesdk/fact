@@ -159,34 +159,38 @@ def classify(claim, evidence, trace=None):
             "matched_sources": [],
         }
 
-    best_entailment = {"score": -1.0, "source": None, "extract": None}
-    best_contradiction = {"score": -1.0, "source": None, "extract": None}
-    best_neutral = {"score": -1.0, "source": None, "extract": None}
+    best_entailment = {"score": -1.0, "source": None, "key": None, "extract": None}
+    best_contradiction = {"score": -1.0, "source": None, "key": None, "extract": None}
+    best_neutral = {"score": -1.0, "source": None, "key": None, "extract": None}
 
     if trace is not None:
         trace["sources_checked"] = []
 
     for e in evidence:
         scores = _nli_scores(premise=e["extract"], hypothesis=claim)
+        origin = e.get("origin")
+        label = f"{e['title']} ({origin})" if origin else e["title"]
+        key = (e["title"], origin)
         if trace is not None:
             trace["sources_checked"].append({
                 "title": e["title"],
+                "origin": origin,
                 "url": e.get("url"),
                 "entailment": round(scores["entailment"], 4),
                 "contradiction": round(scores["contradiction"], 4),
                 "neutral": round(scores["neutral"], 4),
             })
         if scores["entailment"] > best_entailment["score"]:
-            best_entailment = {"score": scores["entailment"], "source": e["title"], "extract": e["extract"]}
+            best_entailment = {"score": scores["entailment"], "source": label, "key": key, "extract": e["extract"]}
         if scores["contradiction"] > best_contradiction["score"]:
-            best_contradiction = {"score": scores["contradiction"], "source": e["title"], "extract": e["extract"]}
+            best_contradiction = {"score": scores["contradiction"], "source": label, "key": key, "extract": e["extract"]}
         if scores["neutral"] > best_neutral["score"]:
-            best_neutral = {"score": scores["neutral"], "source": e["title"], "extract": e["extract"]}
+            best_neutral = {"score": scores["neutral"], "source": label, "key": key, "extract": e["extract"]}
 
     if (
         best_entailment["score"] >= ENTAILMENT_THRESHOLD
         and best_contradiction["score"] >= CONTRADICTION_THRESHOLD
-        and best_entailment["source"] != best_contradiction["source"]
+        and best_entailment["key"] != best_contradiction["key"]
     ):
         # Two different sources each strongly assert the opposite of the
         # other. Picking whichever raw score happens to be a fraction
