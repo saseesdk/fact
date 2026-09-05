@@ -16,6 +16,7 @@ from claim_filter import extract_factual_claims, split_sentences
 from concept_extraction import extract_concepts
 from local_classifier import classify
 from medical_retrieval import retrieve_evidence as retrieve_medical
+from retrieval import retrieve_evidence as retrieve_wikipedia
 from websearch_retrieval import retrieve_evidence as retrieve_websearch
 
 # Fan out to every source rather than picking one domain up front — no
@@ -27,10 +28,15 @@ from websearch_retrieval import retrieve_evidence as retrieve_websearch
 # medical facts; it simply returns [] for non-medical claims, which costs
 # one cheap wasted request, not a wrong answer.
 #
-# General search switched from direct Wikipedia (retrieval.py, kept but no
-# longer wired in here) to LangSearch (websearch_retrieval.py) — a real web
-# search engine rather than one single site, per later direction.
-SOURCES = [retrieve_medical, retrieve_websearch]
+# LangSearch was tried as a straight replacement for Wikipedia and measured
+# worse on both regression suites (general 9/16->8/16, medical 10/14->9/14,
+# see docs/PROGRESS.md) — its snippets/summaries are shorter than Wikipedia's
+# full lead section and missed facts Wikipedia had (e.g. "capital of
+# Australia" lost the "Canberra" mention entirely). Kept as a third
+# supplementary source instead of a replacement, for its broader web
+# coverage beyond one single site, without giving up Wikipedia's more
+# complete text for well-known facts.
+SOURCES = [retrieve_medical, retrieve_wikipedia, retrieve_websearch]
 
 
 def verify(claim):
