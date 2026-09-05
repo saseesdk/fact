@@ -11,7 +11,7 @@ import time
 
 from verify import verify
 
-CLAIMS_FILE = "claims.json"
+CLAIMS_FILE = "src/json/claims.json"
 
 
 def main():
@@ -49,7 +49,7 @@ def main():
     total = len(cases)
     print(f"\n{correct}/{total} correct ({correct / total:.0%})")
 
-    with open("test_results.json", "w") as f:
+    with open("src/json/test_results.json", "w") as f:
         json.dump(results, f, indent=2)
     print("Full results written to test_results.json")
 

@@ -10,7 +10,7 @@ import json
 
 from claim_filter import classify_statement, is_checkable_claim
 
-CASES_FILE = "medical_segregation_test.json"
+CASES_FILE = "src/json/medical_segregation_test.json"
 
 
 def main():

@@ -9,7 +9,7 @@ import json
 
 from verify import verify
 
-CASES_FILE = "medical_claims_test.json"
+CASES_FILE = "src/json/medical_claims_test.json"
 
 
 def main():

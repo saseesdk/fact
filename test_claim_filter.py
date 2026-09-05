@@ -9,7 +9,7 @@ import json
 
 from claim_filter import classify_statement, is_checkable_claim
 
-CASES_FILE = "claim_filter_test.json"
+CASES_FILE = "src/json/claim_filter_test.json"
 
 EXPECTED_MAP = {
     "factual claim": "fact",

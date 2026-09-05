@@ -11,14 +11,14 @@ from flask import Flask, jsonify, request, send_from_directory
 from claim_filter import segregate
 from verify import verify
 
-UI_DIR = Path(__file__).parent / "ui"
+UI_DIR = Path(__file__).parent
 
 app = Flask(__name__, static_folder=None)
 
 
 @app.get("/")
 def index():
-    return send_from_directory(UI_DIR, "index.html")
+    return send_from_directory(UI_DIR, "src/page/index.html")
 
 
 @app.post("/api/segregate")
