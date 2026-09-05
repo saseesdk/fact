@@ -131,10 +131,26 @@ English-only filter in `websearch_retrieval.py`.
   `insufficient_evidence`.
 
 **Net finding: straight replacement measurably regresses both suites.**
-Flagged to the user with three options: keep the replace as-is, go back to
-fanning out to both Wikipedia and LangSearch together (supplement, not
-replace), or something else — decision pending as of this entry. Nothing
-pushed to `origin` yet; sitting locally committed on `langsearch-integration`.
+User chose to supplement instead (fan out to Wikipedia + MedlinePlus +
+LangSearch, all three) rather than replace.
+
+**Re-tested with all three sources:** General **8/16 (50%)**, Medical
+**9/14 (64%)** — identical to the LangSearch-only numbers, still below the
+original Wikipedia+MedlinePlus baseline (56%/71%). Adding LangSearch as a
+third source did not recover the loss and introduced new noise: the
+Australia-capital claim (correctly `contradicted` with Wikipedia-only)
+flipped to `insufficient_evidence` because the extra source added a
+conflicting signal; the apple-a-day false positive persisted in this
+config too.
+
+**Conclusion: LangSearch has not demonstrated a net accuracy win in either
+configuration tried (replace or supplement).** The original
+Wikipedia+MedlinePlus setup (pre-LangSearch) remains the best-performing
+configuration measured so far. Recommendation given to the user: don't
+merge `langsearch-integration` as the default path; either drop LangSearch
+for now, or keep investigating why it's adding noise (shorter text than
+Wikipedia's full extract seems to be the main driver) before it earns a
+place in the default fan-out. Decision pending.
 
 ### Known limitations carried forward
 - MedlinePlus is still queried for every claim (including obviously
