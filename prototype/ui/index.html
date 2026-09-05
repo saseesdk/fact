@@ -345,17 +345,19 @@
 
       if (debug.queries_tried && debug.queries_tried.length) {
         const h = document.createElement("h4");
-        h.textContent = "Searches tried against MedlinePlus";
+        h.textContent = "Searches tried, per source";
         const table = document.createElement("table");
         debug.queries_tried.forEach((q) => {
           const row = document.createElement("tr");
-          const used = q.query === debug.query_used;
+          const used = debug.query_used && q.query === debug.query_used[q.source];
+          const srcCell = document.createElement("td");
+          srcCell.textContent = q.source;
           const qCell = document.createElement("td");
           qCell.textContent = (used ? "✓ " : "  ") + q.query;
           if (!used && q.hits === 0) qCell.className = "miss";
           const hitsCell = document.createElement("td");
           hitsCell.textContent = `${q.hits} hit(s)`;
-          row.append(qCell, hitsCell);
+          row.append(srcCell, qCell, hitsCell);
           table.appendChild(row);
         });
         frag.append(h, table);
@@ -375,15 +377,16 @@
         debug.sources_checked.forEach((s) => {
           const row = document.createElement("tr");
           const nameCell = document.createElement("td");
+          const label = s.origin ? `${s.title} (${s.origin})` : s.title;
           if (s.url) {
             const a = document.createElement("a");
             a.href = s.url;
             a.target = "_blank";
             a.rel = "noopener";
-            a.textContent = s.title;
+            a.textContent = label;
             nameCell.appendChild(a);
           } else {
-            nameCell.textContent = s.title;
+            nameCell.textContent = label;
           }
           row.appendChild(nameCell);
           [s.entailment, s.contradiction, s.neutral].forEach((v) => {

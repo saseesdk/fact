@@ -1,57 +1,105 @@
-"""Evidence retrieval against Wikipedia for the general-trivia MVP domain.
+"""General-purpose evidence retrieval against Wikipedia — one of two sources
+verify.py fans out to (see medical_retrieval.py for the medical-specific
+source, kept alongside this one since it's meaningfully higher quality for
+medical claims specifically).
 
 This is the "trusted source" layer described in the master plan's Tier-1
 source registry (Wikipedia, verified through citations). Swapping in more
-sources later just means adding more functions with the same return shape.
+general sources later just means adding more functions with the same
+{title, extract, url, origin} return shape.
 """
 
 import requests
 
-SEARCH_URL = "https://en.wikipedia.org/w/api.php"
-SUMMARY_URL = "https://en.wikipedia.org/api/rest_v1/page/summary/{title}"
+from query_strategy import query_candidates
+
+API_URL = "https://en.wikipedia.org/w/api.php"
 USER_AGENT = "FactVerificationPrototype/0.1 (research prototype)"
+ORIGIN = "Wikipedia"
 
 
-def search_titles(query, limit=3):
+def _search_titles(term, limit, trace=None):
+    """Returns [] on any network failure rather than raising — matches
+    medical_retrieval._search()'s degrade-safely behavior."""
+    params = {"action": "query", "list": "search", "srsearch": term, "format": "json", "srlimit": limit}
+    try:
+        resp = requests.get(API_URL, params=params, headers={"User-Agent": USER_AGENT}, timeout=10)
+        resp.raise_for_status()
+        titles = [r["title"] for r in resp.json().get("query", {}).get("search", [])]
+    except requests.exceptions.RequestException as e:
+        print(f"retrieval: search failed for {term!r}: {e}")
+        titles = []
+    if trace is not None:
+        trace.setdefault("queries_tried", []).append({"source": ORIGIN, "query": term, "hits": len(titles)})
+    return titles
+
+
+def _get_extract(title):
+    """The REST /page/summary/ endpoint (used previously) only returns the
+    first ~500-char paragraph of the lead, which routinely misses facts that
+    show up later in the lead section — confirmed directly: the "Australia"
+    summary never mentions "Canberra" at all, so "The capital of Australia
+    is Sydney" had nothing to compare against and fell back to
+    insufficient_evidence instead of a confident contradiction. The
+    query-API's prop=extracts&exintro=true returns the FULL lead section
+    (all paragraphs before the first heading, ~2700 chars for Australia,
+    which does mention Canberra) — same "richer article, truncate before
+    tokenizing" approach already used for MedlinePlus."""
     params = {
         "action": "query",
-        "list": "search",
-        "srsearch": query,
+        "prop": "extracts",
+        "exintro": "true",
+        "explaintext": "true",
+        "titles": title,
         "format": "json",
-        "srlimit": limit,
+        "formatversion": "2",
     }
-    resp = requests.get(SEARCH_URL, params=params, headers={"User-Agent": USER_AGENT}, timeout=10)
-    resp.raise_for_status()
-    return [r["title"] for r in resp.json().get("query", {}).get("search", [])]
-
-
-def get_summary(title):
-    url = SUMMARY_URL.format(title=requests.utils.quote(title))
-    resp = requests.get(url, headers={"User-Agent": USER_AGENT}, timeout=10)
-    if resp.status_code != 200:
+    try:
+        resp = requests.get(API_URL, params=params, headers={"User-Agent": USER_AGENT}, timeout=10)
+        resp.raise_for_status()
+        pages = resp.json().get("query", {}).get("pages", [])
+    except requests.exceptions.RequestException as e:
+        print(f"retrieval: extract fetch failed for {title!r}: {e}")
         return None
-    data = resp.json()
+    if not pages or not pages[0].get("extract"):
+        return None
+    page = pages[0]
     return {
-        "title": data.get("title"),
-        "extract": data.get("extract"),
-        "url": data.get("content_urls", {}).get("desktop", {}).get("page"),
+        "title": page["title"],
+        "extract": page["extract"],
+        "url": "https://en.wikipedia.org/wiki/" + requests.utils.quote(page["title"].replace(" ", "_")),
+        "origin": ORIGIN,
     }
 
 
-def retrieve_evidence(claim, max_sources=3):
-    """Given a claim, return a list of {title, extract, url} evidence candidates."""
-    titles = search_titles(claim, limit=max_sources)
+def retrieve_evidence(claim, max_sources=3, trace=None):
+    """Given a claim, return a list of {title, extract, url, origin} evidence
+    candidates from Wikipedia. Same query strategy as medical_retrieval.py
+    (concept-based search, most salient concept first) rather than the raw
+    claim text, for the same reason: a full sentence rarely matches any
+    single Wikipedia article title, while an extracted concept usually does."""
+    titles = []
+    query_used = None
+    for query in query_candidates(claim):
+        titles = _search_titles(query, max_sources, trace=trace)
+        if titles:
+            query_used = query
+            break
+
+    if trace is not None:
+        trace.setdefault("query_used", {})[ORIGIN] = query_used
+
     evidence = []
     for title in titles:
-        summary = get_summary(title)
-        if summary and summary.get("extract"):
-            evidence.append(summary)
+        extract = _get_extract(title)
+        if extract:
+            evidence.append(extract)
     return evidence
 
 
 if __name__ == "__main__":
-    import sys
     import json
+    import sys
 
     claim = " ".join(sys.argv[1:]) or "The capital of Australia is Sydney"
     print(json.dumps(retrieve_evidence(claim), indent=2))

@@ -13,13 +13,27 @@ import json
 import sys
 
 from claim_filter import extract_factual_claims, split_sentences
+from concept_extraction import extract_concepts
 from local_classifier import classify
-from medical_retrieval import retrieve_evidence
+from medical_retrieval import retrieve_evidence as retrieve_medical
+from retrieval import retrieve_evidence as retrieve_wikipedia
+
+# Fan out to every source rather than picking one domain up front — no
+# domain routing yet (see ROADMAP.md), so a general claim and a medical
+# claim both get compared against whichever sources actually have relevant
+# evidence, and the classifier picks the best match regardless of origin.
+# MedlinePlus stays a dedicated source even for general claims since it's
+# meaningfully higher-quality than Wikipedia specifically for medical facts;
+# it simply returns [] for non-medical claims, which costs one cheap wasted
+# request, not a wrong answer.
+SOURCES = [retrieve_medical, retrieve_wikipedia]
 
 
 def verify(claim):
-    trace = {}
-    evidence = retrieve_evidence(claim, trace=trace)
+    trace = {"concepts": extract_concepts(claim)}
+    evidence = []
+    for retrieve in SOURCES:
+        evidence += retrieve(claim, trace=trace)
     result = classify(claim, evidence, trace=trace)
     result["claim"] = claim
     result["evidence_count"] = len(evidence)
