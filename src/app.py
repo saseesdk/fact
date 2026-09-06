@@ -18,7 +18,7 @@ app = Flask(__name__, static_folder=None)
 
 @app.get("/")
 def index():
-    return send_from_directory(UI_DIR, "src/page/index.html")
+    return send_from_directory(UI_DIR, "page/index.html")
 
 
 @app.post("/api/segregate")
