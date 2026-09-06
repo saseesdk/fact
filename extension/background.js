@@ -41,9 +41,29 @@ async function verifyText(text) {
   return res.json();
 }
 
+// content.js is NOT declared in manifest.json's content_scripts anymore —
+// a static declaration only auto-runs on new page loads, so a tab that was
+// already open before the extension was loaded/reloaded would never get
+// it, and sendMessage to that tab would fail with "Could not establish
+// connection. Receiving end does not exist." (confirmed directly).
+// Injecting it here, right before use, means it's always there regardless
+// of when the page was opened. content.js itself guards against being
+// initialized twice if this runs again on the same tab.
+async function ensureContentScriptInjected(tabId) {
+  try {
+    await chrome.scripting.insertCSS({ target: { tabId }, files: ["content.css"] });
+    await chrome.scripting.executeScript({ target: { tabId }, files: ["content.js"] });
+  } catch (e) {
+    // Fails on pages content scripts can never run on (chrome://, the Web
+    // Store, etc.) — the context menu item still shouldn't have been
+    // reachable there, but degrade quietly rather than throw.
+  }
+}
+
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   if (info.menuItemId !== "verify-selection" || !info.selectionText || !tab?.id) return;
 
+  await ensureContentScriptInjected(tab.id);
   chrome.tabs.sendMessage(tab.id, { type: "FACTCHECK_LOADING" });
   try {
     const data = await withServiceWorkerKeepAlive(verifyText(info.selectionText));
