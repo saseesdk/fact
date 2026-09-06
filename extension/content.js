@@ -1,9 +1,22 @@
-// Injected on every page. Listens for messages from background.js
-// (triggered by the right-click "Verify with Fact Check" context menu) and
-// renders a floating results panel directly on the page — no full-page
-// inline highlighting yet (see extension/README.md), just a clear summary
-// panel, matching Phase 5's "popup with a page-level accuracy score" goal
-// from ROADMAP.md as a first cut.
+// Injected on demand by background.js (chrome.scripting.executeScript),
+// right when "Verify with Fact Check" is clicked — not declared statically
+// in manifest.json, since a static content_scripts entry only auto-runs on
+// NEW page loads. A page already open before the extension was
+// loaded/reloaded would never get it, and background.js's sendMessage to
+// that tab would fail with "Could not establish connection. Receiving end
+// does not exist." — confirmed directly. Injecting on demand means it
+// always works regardless of when the page was opened.
+//
+// Guarded against re-injection: clicking "Verify" again on the same page
+// re-runs this whole file (executeScript doesn't know it's "already
+// there"). Without this guard, a second run would redeclare everything and
+// add a second message listener, double-handling every future message.
+if (!window.__factcheckContentScriptLoaded) {
+  window.__factcheckContentScriptLoaded = true;
+  initFactCheckContentScript();
+}
+
+function initFactCheckContentScript() {
 
 let panel = null;
 
@@ -80,3 +93,5 @@ chrome.runtime.onMessage.addListener((message) => {
     setBody(`<p class="factcheck-status factcheck-error-text">Failed: ${escapeHtml(message.error)}</p>`);
   }
 });
+
+}
