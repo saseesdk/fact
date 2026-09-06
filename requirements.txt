@@ -5,3 +5,4 @@ flask
 spacy
 python-dotenv
 langdetect
+flask-cors
