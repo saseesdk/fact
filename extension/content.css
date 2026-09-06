@@ -123,3 +123,89 @@
   font-style: italic;
   margin: 0;
 }
+
+/* Inline highlights, wrapped directly around the verified text on the
+   page itself — an unknown custom element (<factcheck-mark>), not span/mark,
+   so the host page's own CSS can't accidentally restyle it. Deliberately
+   NOT under "all: initial" like the panel above: these need to sit inline
+   with the surrounding page text and inherit its font/size, only adding a
+   background tint and an underline. */
+factcheck-mark.factcheck-highlight {
+  display: inline;
+  cursor: help;
+  border-bottom: 2px solid;
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
+factcheck-mark.factcheck-highlight-supported {
+  background: rgba(47, 111, 78, 0.22);
+  border-color: #2f6f4e;
+}
+
+factcheck-mark.factcheck-highlight-contradicted {
+  background: rgba(161, 61, 61, 0.22);
+  border-color: #a13d3d;
+}
+
+factcheck-mark.factcheck-highlight-insufficient_evidence {
+  background: rgba(154, 139, 79, 0.22);
+  border-color: #9a8b4f;
+}
+
+#factcheck-tooltip {
+  all: initial;
+  position: fixed;
+  display: none;
+  z-index: 2147483647;
+  max-width: 300px;
+  background: #ffffff;
+  color: #1c2321;
+  border: 1px solid #d7dacd;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  padding: 8px 10px;
+  font-family: -apple-system, "Segoe UI", Arial, sans-serif;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+#factcheck-tooltip * {
+  box-sizing: border-box;
+  font-family: inherit;
+}
+
+#factcheck-tooltip .factcheck-tooltip-verdict {
+  display: inline-block;
+  font-weight: 700;
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 0.03em;
+  padding: 2px 6px;
+  border-radius: 4px;
+  margin-bottom: 4px;
+}
+
+#factcheck-tooltip .factcheck-supported {
+  background: #dff2e4;
+  color: #1f5238;
+}
+
+#factcheck-tooltip .factcheck-contradicted {
+  background: #f7dede;
+  color: #7a2626;
+}
+
+#factcheck-tooltip .factcheck-insufficient_evidence {
+  background: #f1efe5;
+  color: #6b5f30;
+}
+
+#factcheck-tooltip .factcheck-tooltip-explanation {
+  margin-bottom: 4px;
+}
+
+#factcheck-tooltip .factcheck-tooltip-source {
+  color: #63695f;
+  font-size: 11px;
+}
