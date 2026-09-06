@@ -17,16 +17,26 @@ from concept_extraction import extract_concepts
 from local_classifier import classify
 from medical_retrieval import retrieve_evidence as retrieve_medical
 from retrieval import retrieve_evidence as retrieve_wikipedia
+from websearch_retrieval import retrieve_evidence as retrieve_websearch
 
 # Fan out to every source rather than picking one domain up front — no
 # domain routing yet (see ROADMAP.md), so a general claim and a medical
 # claim both get compared against whichever sources actually have relevant
 # evidence, and the classifier picks the best match regardless of origin.
 # MedlinePlus stays a dedicated source even for general claims since it's
-# meaningfully higher-quality than Wikipedia specifically for medical facts;
-# it simply returns [] for non-medical claims, which costs one cheap wasted
-# request, not a wrong answer.
-SOURCES = [retrieve_medical, retrieve_wikipedia]
+# meaningfully higher-quality than general web search specifically for
+# medical facts; it simply returns [] for non-medical claims, which costs
+# one cheap wasted request, not a wrong answer.
+#
+# LangSearch was tried as a straight replacement for Wikipedia and measured
+# worse on both regression suites (general 9/16->8/16, medical 10/14->9/14,
+# see docs/PROGRESS.md) — its snippets/summaries are shorter than Wikipedia's
+# full lead section and missed facts Wikipedia had (e.g. "capital of
+# Australia" lost the "Canberra" mention entirely). Kept as a third
+# supplementary source instead of a replacement, for its broader web
+# coverage beyond one single site, without giving up Wikipedia's more
+# complete text for well-known facts.
+SOURCES = [retrieve_medical, retrieve_wikipedia, retrieve_websearch]
 
 
 def verify(claim):

@@ -3,3 +3,5 @@ torch
 transformers
 flask
 spacy
+python-dotenv
+langdetect

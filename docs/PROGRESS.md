@@ -96,6 +96,62 @@ London) to see how many are the same relational-confusion class vs. simply
 "evidence never retrieved" — those need different fixes, and lumping them
 together into one threshold change would be guessing.
 
+## 2026-09-05 (later) — LangSearch integration (branch `langsearch-integration` off `dev`)
+
+Manoj suggested LangSearch (free-tier web search API) as the general
+source, to replace direct Wikipedia search. Provided an API key, stored in
+`.env` (gitignored). Built `websearch_retrieval.py`, wired into `verify.py`
+in place of `retrieval.py` (Wikipedia) — `retrieval.py` kept but unused,
+same pattern as before.
+
+**Bug found and fixed during validation:** LangSearch has no language
+parameter and mixes in non-English results by default — confirmed a plain
+"Australia" query returned Chinese (baike.com), Spanish, and Portuguese
+Wikipedia mirrors alongside English pages. The English-only NLI classifier
+scored one of those anyway (a Spanish Wikipedia mirror got 0.79
+"contradiction" against an English claim) — a real risk of an unreliable
+verdict from a language mismatch. Fixed with a `langdetect`-based
+English-only filter in `websearch_retrieval.py`.
+
+**Regression test results (straight replace, Wikipedia -> LangSearch):**
+- General suite: **8/16 (50%)**, down from 9/16 (56%). Two clear
+  regressions: "capital of France is Paris" and "capital of Australia is
+  Sydney" both went from correct to `insufficient_evidence`, because
+  LangSearch's summaries/snippets are shorter than Wikipedia's full lead
+  section and didn't happen to state the capital city. The sun/earth
+  relational-confusion bug (see above) reproduces here too, confirming it's
+  an NLI model limitation independent of which source is used.
+- Medical suite: **9/14 (64%)**, down from 10/14 (71%). One new failure:
+  "Eating an apple a day guarantees you will never get sick" now scores
+  `contradicted` (0.98) from an "Apple - Wikipedia (via LangSearch)" page —
+  happens to land on the intuitively-correct real-world answer, but for an
+  unreliable reason (likely bypassed the distinctive-terms gate because the
+  claim only has one real extracted concept, so the check short-circuits to
+  "nothing to check, pass"). Previously this was a clean, correctly-reasoned
+  `insufficient_evidence`.
+
+**Net finding: straight replacement measurably regresses both suites.**
+User chose to supplement instead (fan out to Wikipedia + MedlinePlus +
+LangSearch, all three) rather than replace.
+
+**Re-tested with all three sources:** General **8/16 (50%)**, Medical
+**9/14 (64%)** — identical to the LangSearch-only numbers, still below the
+original Wikipedia+MedlinePlus baseline (56%/71%). Adding LangSearch as a
+third source did not recover the loss and introduced new noise: the
+Australia-capital claim (correctly `contradicted` with Wikipedia-only)
+flipped to `insufficient_evidence` because the extra source added a
+conflicting signal; the apple-a-day false positive persisted in this
+config too.
+
+**Conclusion: LangSearch has not demonstrated a net accuracy win in either
+configuration tried (replace or supplement).** The original
+Wikipedia+MedlinePlus setup (pre-LangSearch) remains the best-performing
+configuration measured so far. Recommendation given to the user: don't
+merge `langsearch-integration` as the default path; either drop LangSearch
+for now, or keep investigating why it's adding noise (shorter text than
+Wikipedia's full extract seems to be the main driver) before it earns a
+place in the default fan-out. Decision pending.
+
 ### Known limitations carried forward
 - MedlinePlus is still queried for every claim (including obviously
   non-medical ones) — costs one cheap wasted request per claim, not
