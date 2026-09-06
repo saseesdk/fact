@@ -37,7 +37,7 @@ async function run() {
   const text = input.value;
   if (!text.trim()) return;
   runBtn.disabled = true;
-  statusEl.textContent = "Checking…";
+  statusEl.textContent = "Checking… can take a minute or two (runs fully offline).";
   resultsEl.innerHTML = "";
 
   chrome.runtime.sendMessage({ type: "FACTCHECK_VERIFY_TEXT", text }, (response) => {

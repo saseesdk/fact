@@ -14,6 +14,20 @@ chrome.runtime.onInstalled.addListener(() => {
   });
 });
 
+// MV3 service workers get torn down by Chrome after ~30s of being
+// considered "idle" — a pending fetch() alone doesn't reliably count as
+// activity that resets that timer. Our backend is CPU-only local model
+// inference and routinely takes well over 30s per request (confirmed
+// directly: the panel got stuck on "Checking…" forever even though the
+// server logged a clean 200 — the worker had already been killed by the
+// time the response came back, so it never delivered the result message).
+// Fix: keep issuing a harmless extension API call every few seconds while
+// a request is in flight, which does reset Chrome's idle timer.
+function withServiceWorkerKeepAlive(promise) {
+  const heartbeat = setInterval(() => chrome.runtime.getPlatformInfo(() => {}), 15000);
+  return promise.finally(() => clearInterval(heartbeat));
+}
+
 async function verifyText(text) {
   const res = await fetch(`${API_BASE}/api/verify_text`, {
     method: "POST",
@@ -32,7 +46,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 
   chrome.tabs.sendMessage(tab.id, { type: "FACTCHECK_LOADING" });
   try {
-    const data = await verifyText(info.selectionText);
+    const data = await withServiceWorkerKeepAlive(verifyText(info.selectionText));
     chrome.tabs.sendMessage(tab.id, { type: "FACTCHECK_RESULT", data });
   } catch (err) {
     chrome.tabs.sendMessage(tab.id, {
@@ -46,7 +60,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 // privileged fetch path, so it asks the background worker to do it too.
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.type !== "FACTCHECK_VERIFY_TEXT") return false;
-  verifyText(message.text)
+  withServiceWorkerKeepAlive(verifyText(message.text))
     .then((data) => sendResponse({ ok: true, data }))
     .catch((err) =>
       sendResponse({

@@ -71,7 +71,9 @@ function renderResult(data) {
 
 chrome.runtime.onMessage.addListener((message) => {
   if (message.type === "FACTCHECK_LOADING") {
-    setBody(`<p class="factcheck-status">Checking claims against local sources…</p>`);
+    setBody(
+      `<p class="factcheck-status">Checking claims against local sources… this runs fully offline on your own machine and can take a minute or two per claim.</p>`
+    );
   } else if (message.type === "FACTCHECK_RESULT") {
     renderResult(message.data);
   } else if (message.type === "FACTCHECK_ERROR") {
