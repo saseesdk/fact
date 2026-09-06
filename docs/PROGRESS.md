@@ -4,6 +4,49 @@ Running log of what's been decided and done, session by session. `ROADMAP.md`
 is the long-term phase plan; `README.md` is setup/usage; this file is "what
 actually happened and what's still open" — read this first after a break.
 
+## 2026-09-06 (later) — speed-up-nli-scoring: why one claim took ~2 minutes
+
+Per direct question about per-claim latency, measured (not guessed) where
+the time actually goes: retrieval is fast (3-6s), but NLI comparison
+scoring was ~7-19s *per evidence item* and scaled linearly (3 items = 28s,
+4 items = 36s) — with `max_sources=5`, worst case is ~50-90s of pure
+scoring, matching the reported ~2 minutes.
+
+**Root cause, confirmed directly:** LangSearch's "summary" field can be
+enormous (one real result was 50,000+ characters), and every comparison
+was hitting `local_classifier.MAX_PREMISE_CHARS` (2000) every single time,
+paying near-maximum compute cost on every item regardless of source.
+
+**Two attempted fixes that made things WORSE (measured, not assumed):**
+1. Batching all evidence-claim pairs into one tokenizer call + one forward
+   pass, instead of one call per item. Backfired: padding shorter premises
+   up to the batch's longest one increases cost for the shorter ones, and
+   this machine's CPU backend didn't get enough coordinated-batch benefit
+   to offset that. Measured slower than sequential on every test.
+2. Running comparisons concurrently via `ThreadPoolExecutor` with reduced
+   per-call thread count. Backfired too: this machine has 6 physical cores
+   and a *single* inference call already uses all 6 (torch's default
+   intra-op threading) — there's no idle capacity to parallelize into, only
+   contention. Measured slower than sequential.
+
+**The fix that actually worked:** lowering `MAX_PREMISE_CHARS` from 2000 to
+800 — since transformer compute scales with sequence length, this directly
+reduces the amount of work per comparison rather than trying to
+parallelize the same amount of work. Measured **~2.5-3x speedup**
+(17.4s/item → 6.1s/item on one test claim) consistently across multiple
+claims and re-checks.
+
+**Accuracy validated, not assumed:** first full medical-suite run at 800
+chars scored 7/14 (50%, down from the historical 64-71% range), with two
+previously rock-solid cases ("flu vaccine cannot give you the flu",
+"antibiotics don't work against viral infections") failing right at the
+threshold edge — looked like a real regression. A second full run at the
+same 800-char setting scored 9/14 (64%), with *both* of those cases passing
+correctly. Conclusion: the first run's drop was live-search variance
+(LangSearch's results aren't perfectly stable between runs — a known
+limitation, see the LangSearch integration entry above), not the char cap.
+**800 chars ships with no demonstrated accuracy cost.**
+
 ## 2026-09-06 — dev-langsearch-only: source count bump + a real trust finding
 
 Per explicit direction, `dev` (via branch `dev-langsearch-only`) and both
