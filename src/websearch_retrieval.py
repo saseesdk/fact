@@ -47,7 +47,7 @@ def _search(term, max_sources, trace=None):
     return pages
 
 
-def retrieve_evidence(claim, max_sources=3, trace=None):
+def retrieve_evidence(claim, max_sources=5, trace=None):
     """Given a claim, return a list of {title, extract, url, origin} evidence
     candidates from general web search. Same concept-based query strategy as
     the other sources (see query_strategy.py) for consistency, even though
@@ -55,6 +55,13 @@ def retrieve_evidence(claim, max_sources=3, trace=None):
     handle a full natural-language query fine on its own; keeping one
     strategy across all sources keeps behavior easier to reason about and
     reuses the already-validated proper-noun-first concept ranking.
+
+    max_sources bumped from 3 to 5: with LangSearch as the only source
+    (dev-langsearch-only), the English-only filter below can otherwise
+    leave too little evidence to work with — confirmed directly, "Napoleon
+    Bonaparte" returned 3 hits at count=3 but 2 were non-English (Chinese,
+    French), leaving 0 usable evidence after filtering. Requesting more
+    up front gives the filter more to work with.
 
     Prefers each result's "summary" (a fuller extract) over "snippet" (a
     short, "..."-truncated excerpt) for the text handed to the NLI

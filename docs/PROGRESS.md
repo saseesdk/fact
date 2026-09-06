@@ -4,6 +4,44 @@ Running log of what's been decided and done, session by session. `ROADMAP.md`
 is the long-term phase plan; `README.md` is setup/usage; this file is "what
 actually happened and what's still open" — read this first after a break.
 
+## 2026-09-06 — dev-langsearch-only: source count bump + a real trust finding
+
+Per explicit direction, `dev` (via branch `dev-langsearch-only`) and both
+extension branches now use LangSearch alone (`SOURCES = [retrieve_websearch]`),
+dropping MedlinePlus and Wikipedia. `medical_retrieval.py`/`retrieval.py`
+stay in the repo, just unused — known accuracy tradeoff already documented
+above (LangSearch-only scored lower than the original setup on both
+regression suites).
+
+**Bug found and fixed:** with only one source, the English-only language
+filter (see LangSearch integration entry above) could leave zero usable
+evidence — confirmed directly, "Napoleon Bonaparte" returned 3 hits at
+`count=3` but 2 were non-English, leaving nothing to compare against.
+Bumped `websearch_retrieval.py`'s default `max_sources` from 3 to 5 so the
+filter has more to work with.
+
+**New finding, not yet fixed — a real trust/source-quality risk:**
+re-testing "Napoleon Bonaparte was born in Italy" (actually false — he was
+born in Corsica, France) at `max_sources=5` returned exactly one piece of
+evidence: a page titled "Napoleon - Wikipedia" at
+`https://en.m.wikipedia.com/wiki/Emperor_Napoleon` — **not the real
+Wikipedia domain** (`en.wikipedia.org`; `en.m.wikipedia.com` appears to be
+an unrelated site using Wikipedia's name). That page asserts Napoleon was
+born in Italy, and the classifier scored it `supported` at 0.90 confidence,
+confidently agreeing with a false claim because a spoofed/impersonating
+source vouched for it.
+
+This is a different, arguably more serious problem than anything found so
+far: earlier issues were about *retrieval missing the right evidence* or
+*the NLI model misreading correct evidence*; this one is about **not being
+able to tell a real source from one that merely borrows a trusted name.**
+General web search has no such guarantee the way a single curated domain
+(MedlinePlus, real Wikipedia) does. Not fixed yet — would need some form of
+source verification (e.g., checking a result's domain against the actual
+known domain for well-known sites, or a source-reputation/allowlist layer)
+before LangSearch-sourced "Wikipedia" or similar brand-name claims can be
+trusted at face value. Flagged for a decision on priority.
+
 ## 2026-09-05 — General-domain pivot
 
 **Decision:** reviewed a new MVP deck (`IDEATION 1.pptx`) that specified a
