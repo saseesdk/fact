@@ -1,0 +1,125 @@
+/* Namespaced under #factcheck-panel so this can never leak into or clash
+   with the host page's own styles. */
+
+#factcheck-panel {
+  all: initial;
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  width: 340px;
+  max-height: 80vh;
+  overflow-y: auto;
+  z-index: 2147483647;
+  background: #ffffff;
+  color: #1c2321;
+  border: 1px solid #d7dacd;
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  font-family: -apple-system, "Segoe UI", Arial, sans-serif;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+#factcheck-panel * {
+  box-sizing: border-box;
+  font-family: inherit;
+}
+
+#factcheck-panel .factcheck-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 12px;
+  font-weight: 700;
+  border-bottom: 1px solid #d7dacd;
+}
+
+#factcheck-panel .factcheck-close {
+  background: transparent;
+  border: none;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  color: #63695f;
+  padding: 0 4px;
+}
+
+#factcheck-panel .factcheck-body {
+  padding: 10px 12px;
+}
+
+#factcheck-panel .factcheck-status {
+  color: #63695f;
+  margin: 0;
+}
+
+#factcheck-panel .factcheck-error-text {
+  color: #a13d3d;
+}
+
+#factcheck-panel .factcheck-claim {
+  margin-bottom: 10px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #eceae2;
+}
+
+#factcheck-panel .factcheck-claim:last-child {
+  border-bottom: none;
+}
+
+#factcheck-panel .factcheck-claim-text {
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+#factcheck-panel .factcheck-verdict {
+  padding: 6px 8px;
+  border-radius: 6px;
+  border-left: 3px solid;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+#factcheck-panel .factcheck-verdict-label {
+  font-weight: 700;
+  text-transform: uppercase;
+  font-size: 11px;
+  letter-spacing: 0.03em;
+}
+
+#factcheck-panel .factcheck-supported {
+  background: #dff2e4;
+  border-color: #2f6f4e;
+  color: #1f5238;
+}
+
+#factcheck-panel .factcheck-contradicted {
+  background: #f7dede;
+  border-color: #a13d3d;
+  color: #7a2626;
+}
+
+#factcheck-panel .factcheck-insufficient_evidence {
+  background: #f1efe5;
+  border-color: #9a8b4f;
+  color: #6b5f30;
+}
+
+#factcheck-panel .factcheck-sources {
+  font-size: 11px;
+  opacity: 0.85;
+}
+
+#factcheck-panel .factcheck-skipped {
+  color: #63695f;
+  font-style: italic;
+  font-size: 12px;
+  margin: 6px 0 0;
+}
+
+#factcheck-panel .factcheck-empty {
+  color: #63695f;
+  font-style: italic;
+  margin: 0;
+}
