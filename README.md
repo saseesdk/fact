@@ -48,9 +48,9 @@ the first download.
 
 ## Setup
 
-Use the project's own virtualenv (kept separate from any other project's env
-on this machine — torch/transformers are heavy and don't belong in unrelated
-repos). This is a Windows machine, so the venv uses `Scripts/`, not `bin/`:
+Use the project's own virtualenv (kept separate from any other project's
+env on this machine — torch/transformers are heavy). This is a Windows
+machine, so the venv uses `Scripts/`, not `bin/`:
 
 ```bash
 python -m venv venv
@@ -58,142 +58,82 @@ python -m venv venv
 ./venv/Scripts/python -m spacy download en_core_web_sm
 ```
 
-First run downloads the NLI model (~370MB) from Hugging Face and caches it
-under `~/.cache/huggingface`; subsequent runs are offline. The spaCy model
-(~13MB, used for concept extraction — `concept_extraction.py`) is a
-separate one-time download via the command above, not covered by
-`pip install -r requirements.txt`.
+First run downloads two NLI models (~370MB each) from Hugging Face and
+caches them under `~/.cache/huggingface`; subsequent runs are offline. The
+spaCy model (~13MB, used for concept extraction) is a separate one-time
+download via the command above, not covered by `pip install`.
+
+**LangSearch API key required**: sign up for a free-tier key at
+[langsearch.com](https://langsearch.com), then create a `.env` file in the
+repo root (gitignored, never committed) containing:
+
+```
+LANGSEARCH_API_KEY=your-key-here
+```
+
+Without this, retrieval returns no evidence and every claim resolves to
+`insufficient_evidence`.
 
 ## Usage
 
 Check a single claim:
 
 ```bash
-cd prototype
-../venv/Scripts/python verify.py "The capital of Australia is Sydney"
+venv/Scripts/python src/verify.py "The capital of Australia is Sydney"
 ```
 
-Check a full paragraph — sentences are split, filtered to just the checkable
-factual claims (`claim_filter.py`), and only those are verified; everything
-else is returned separately as `skipped_non_factual`:
+Check a full paragraph — sentences are split, filtered to just the
+checkable factual claims, and only those are verified; everything else is
+returned separately as `skipped_non_factual`:
 
 ```bash
-../venv/Scripts/python verify.py "The capital of Australia is Sydney. This is a beautiful country. The economy is on fire right now."
+venv/Scripts/python src/verify.py "The capital of Australia is Sydney. This is a beautiful country. The economy is on fire right now."
 ```
 
-Run the hand-picked verification test set (8 true / 6 false / 4
-subjective-or-unverifiable claims) and get a pass rate:
+Run the test suites (each prints a pass rate):
 
 ```bash
-../venv/Scripts/python test_claims.py
-```
-
-Run the fact/opinion filter test set (15 sentences: facts, opinions,
-metaphors, predictions) and get a pass rate:
-
-```bash
-../venv/Scripts/python test_claim_filter.py
+venv/Scripts/python src/test_claims.py          # 16 general-domain claims
+venv/Scripts/python src/test_verify_medical.py  # 14 medical claims
+venv/Scripts/python src/test_claim_filter.py           # fact/opinion filter only
+venv/Scripts/python src/test_claim_filter_medical.py   # fact/opinion filter, medical style
+venv/Scripts/python src/test_local_classifier.py       # comparison step, no network
 ```
 
 ## Web UI
 
-A minimal local web UI (see `ROADMAP.md` Phase 1/2): paste in any text, see
-it partitioned into checkable factual claims vs. everything else
-(`claim_filter.segregate()`), then click "Verify" on any claim to run full
-retrieval + verdict (`verify()`). Each verdict has a "Show what happened
-behind the scenes" toggle exposing the actual trace: concepts extracted from
-the claim, which MedlinePlus searches were tried and which one hit, every
-source's entailment/contradiction/neutral scores, and whether the
-distinctive-terms check (see below) passed — the goal is that no verdict is
-a black box.
-
 ```bash
-cd prototype
-../venv/Scripts/python app.py
+venv/Scripts/python src/app.py
 ```
 
-Then open `http://127.0.0.1:5000` in a browser. Backend is two Flask routes
-(`/api/segregate`, `/api/verify`) over `claim_filter.segregate()` and
-`verify.verify()`; frontend is a static page in `prototype/ui/` with no
-build step.
+Then open `http://127.0.0.1:5000`. Paste text, see it split into checkable
+claims vs. everything else, click "Verify" on any claim to run the full
+pipeline. Each verdict has a "Show what happened behind the scenes" toggle
+— the actual trace: concepts extracted, which searches were tried and
+which hit, every source's raw scores, whether the trust-gate check passed.
+No verdict is a black box.
 
-## How a verdict is actually reached (concept extraction + the trust gate)
+## Repo layout
 
-Naively comparing a claim against whatever MedlinePlus page happens to match
-its raw text is dangerous: an NLI model can score high entailment or
-contradiction purely from general topical familiarity with a page, without
-that page ever addressing what the claim specifically asserts — confirmed
-directly, e.g. "Type 1 diabetes can be cured by drinking more water" scored
-0.95 entailment against the Diabetes page, which never mentions "water" or
-"cure" anywhere.
-
-The pipeline now works in two stages instead of one direct compare:
-
-1. **Concept extraction** (`concept_extraction.py`, spaCy noun chunks) pulls
-   the claim's actual topical concepts, most content-rich first, and each is
-   tried as its own MedlinePlus search term (`medical_retrieval.py`) — a
-   single concept like "Type 1 diabetes" or "Sinusitis" finds the right page
-   far more reliably than the raw sentence or a single bare keyword did.
-   A leading bare quantity ("10 paracetamol") is stripped before searching,
-   since MedlinePlus's keyword search has no concept of "10" as a dosage —
-   it just treats it as a term to match, which surfaced unrelated pages.
-2. **The distinctive-terms gate** (`local_classifier._addresses_claim_specifics`)
-   is checked before accepting any "supported"/"contradicted" verdict: any
-   number in the claim (dosage, year, statistic) must literally appear in the
-   evidence, and any concept beyond the claim's primary one must contribute
-   at least one term the evidence actually contains. Failing either downgrades
-   the verdict to `insufficient_evidence` with an explanation, rather than
-   reporting a confident verdict that's actually just lexical-overlap noise.
-
-**Known remaining limitation:** this catches invented statistics/dates and
-generic topical false positives, but MedlinePlus's consumer-health prose
-usually doesn't state precise numeric thresholds (e.g. "how many tablets is
-an overdose") even on the exact right page — that requires a structured
-drug-label source (NIH DailyMed has one, confirmed reachable, not yet wired
-in) rather than an encyclopedia article. Until then, dosage-specific safety
-claims correctly resolve to `insufficient_evidence` rather than a guess.
-
-## Phase 3: fact/opinion filtering — calibration notes
-
-The filter reuses the same NLI model as a zero-shot classifier rather than
-adding a second model. Getting it to behave took real calibration, documented
-at the top of `claim_filter.py`:
-
-- A 3-way split (fact / opinion / metaphor) could not reliably detect
-  metaphor at all (0/4) — general-purpose NLI has no real signal for
-  figurative language. Collapsed to a 2-way fact/opinion split instead,
-  since the pipeline only needs to *exclude* non-checkable statements, not
-  correctly label *why*.
-- Confidence margins are often razor-thin even for canonical facts — "The
-  capital of France is Paris" scored fact=0.148 vs opinion=0.185, a near
-  coin flip that a bare argmax would silently misfile as an opinion and
-  drop from verification entirely. Fixed by failing **open**: only exclude a
-  sentence when opinion clearly beats fact by a margin (`OPINION_MARGIN`).
-  Silently skipping a real claim is worse than spending a verification
-  cycle on a borderline one, which just resolves to `insufficient_evidence`.
-- Remaining known misses (80% on the test set): future-tense predictions
-  read as "opinion," and short idioms ("time is money") read as literal
-  fact. Both are open questions the master plan itself calls out, not bugs.
+```
+src/            active source code + test scripts + fixtures + web UI
+  json/         test fixtures (claims + expected verdicts)
+  page/         web UI (single static HTML page, no build step)
+legacy/         retrieval modules not currently wired in (see docs/PROGRESS.md)
+docs/
+  ARCHITECTURE.md   file-by-file explanation + pipeline flow (read this first)
+  ROADMAP.md        long-term phase plan
+  PROGRESS.md       running log of what's been tried/found/decided
+```
 
 ## What this does NOT do yet
 
-- No caching, no API wrapper, no extension, no database.
+- No caching, no database, no auth.
 - No page-text ingestion (HTML stripping, boilerplate removal) — input is
   already plain text.
-- No PubMed integration yet for claims about a specific research finding
-  (MedlinePlus only covers general consumer-health facts).
-- No structured drug-dosage source (DailyMed) — see the limitation noted
-  above; precise numeric dosage-safety claims stay `insufficient_evidence`.
-- Retrieval can still occasionally surface a topically-adjacent-but-wrong
-  page even after concept extraction — mitigated by the distinctive-terms
-  gate and the conflict-detection branch in `local_classifier.py`, not
-  eliminated. A real fix needs embedding-based relevance scoring, not string
-  matching.
-
-## Next steps
-
-1. Wrap `verify()`/`verify_text()` in a FastAPI endpoint (Phase 4).
-2. Build the Chrome extension (Manifest V3) that sends page text to the API
-   and highlights results (Phase 5).
-3. Wire in NIH DailyMed as a second medical source for dosage-specific
-   claims, or PubMed for research-finding claims.
+- No source-trust verification — a search result can use a well-known
+  site's name without actually being that site, and nothing currently
+  catches this (see `docs/PROGRESS.md`).
+- No structured drug-dosage source — precise numeric dosage-safety claims
+  correctly resolve to `insufficient_evidence` rather than a guess, since
+  general web prose rarely states exact thresholds.

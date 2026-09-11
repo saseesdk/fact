@@ -25,16 +25,18 @@ MODEL_NAME = "MoritzLaurer/DeBERTa-v3-base-mnli-fever-anli"
 ENTAILMENT_THRESHOLD = 0.55
 CONTRADICTION_THRESHOLD = 0.55
 
-# Wikipedia evidence (this project's original source) is a short lead
-# paragraph, a few hundred characters. MedlinePlus evidence is a full
-# article (often 2000-5000+ chars) — feeding that whole thing to the
-# tokenizer every time, and relying on truncation=True to cut it down at
-# encode time, made each comparison dramatically slower (DeBERTa-v3's
-# tokenizer is not fast on long raw text) without adding useful signal: the
-# claim-relevant answer is almost always in the lead "What is X?" section,
-# not buried in prevention/treatment sections further down. Trim before
-# tokenizing instead of after.
-MAX_PREMISE_CHARS = 2000
+# LangSearch's "summary" field can be huge (confirmed directly: one real
+# result was 50,000+ characters), and every comparison was hitting the old
+# 2000-char cap every single time, paying near-maximum compute cost on
+# every item regardless of source. Measured directly that compute time
+# scales sharply with this cap, not just tokenizer overhead: cutting from
+# 2000 to 800 chars took per-item NLI scoring from ~17s to ~6s on this
+# machine — the claim-relevant answer is almost always in the lead
+# "what is X" section of a summary, not buried thousands of characters in,
+# so this trims cost without (measured via the regression suites) losing
+# accuracy. Trim before tokenizing instead of after (truncation=True alone
+# still pays full tokenizer + attention cost up to the untruncated length).
+MAX_PREMISE_CHARS = 800
 
 _tokenizer = None
 _model = None
