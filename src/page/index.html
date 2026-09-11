@@ -349,7 +349,11 @@
         const table = document.createElement("table");
         debug.queries_tried.forEach((q) => {
           const row = document.createElement("tr");
-          const used = debug.query_used && q.query === debug.query_used[q.source];
+          // query_used[source] is a list now, not a single string — a claim's
+          // evidence can come from more than one contributing query since
+          // retrieval merges results across queries instead of stopping at
+          // the first one that returns anything (issue #20).
+          const used = debug.query_used?.[q.source]?.includes(q.query);
           const srcCell = document.createElement("td");
           srcCell.textContent = q.source;
           const qCell = document.createElement("td");
