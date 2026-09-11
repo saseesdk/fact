@@ -4,6 +4,7 @@ Minimal Flask backend over claim_filter.segregate(). No database, no auth,
 no build step for the frontend — a single static page in ui/.
 """
 
+import os
 from pathlib import Path
 
 from flask import Flask, jsonify, request, send_from_directory
@@ -71,4 +72,4 @@ if __name__ == "__main__":
     # use_reloader off: the reloader's monitor+worker process pair was
     # racing on Windows (multiple stale workers ending up bound around the
     # same port across restarts). Restart manually after editing instead.
-    app.run(debug=True, port=5000, use_reloader=False)
+    app.run(debug=os.getenv("FLASK_DEBUG") == "1", port=5000, use_reloader=False)
