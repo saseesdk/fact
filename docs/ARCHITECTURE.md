@@ -40,7 +40,8 @@ for each factual sentence:
    │    appear in the evidence, or is this just topical noise?)
    │
    ▼
-final verdict: supported / contradicted / insufficient_evidence
+final verdict: supported / misrepresented / unsupported
+   (a 4th category, outdated, is defined but not produced yet — see local_classifier.py)
    │
    ▼
 verify.py ties all of the above into one call: verify(claim)
@@ -118,7 +119,9 @@ app.py exposes it over HTTP for the web UI (src/page/index.html)
   numbers, its secondary concepts) — this is what stops a page that's
   merely *about the same topic* from being mistaken for real support or
   refutation. If two sources disagree, that conflict is surfaced as
-  `insufficient_evidence` rather than picked between.
+  `unsupported` rather than picked between. The "supported" and
+  "misrepresented" verdicts also return each matched source's URL
+  (`sources: [{title, url}]`), so a UI can link directly to it.
 
 ### Tests and fixtures
 

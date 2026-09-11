@@ -3,11 +3,19 @@
 Uses MoritzLaurer/DeBERTa-v3-base-mnli-fever-anli — an NLI model trained on
 MNLI + FEVER-NLI + ANLI (~200M params, CPU-friendly). FEVER is literally the
 "claim + evidence -> SUPPORTS/REFUTES/NOT ENOUGH INFO" task, which is exactly
-what this project needs, so this maps directly onto our verdict categories:
+what this project needs, so this maps onto our four user-facing verdicts
+(issue #18):
 
-    entailment    -> supported
-    contradiction -> contradicted
-    neutral       -> insufficient_evidence
+    entailment    -> supported        (a source backs up the claim)
+    contradiction -> misrepresented   (a relevant source disagrees with it)
+    neutral       -> unsupported      (nothing relevant enough found either way)
+
+There is a 4th user-facing category, "outdated" (the claim was once true but
+a source shows it no longer is, with a date), which this module does NOT
+produce yet — that needs actual date-aware reasoning (extracting and
+comparing dates between claim and evidence), which nothing in this pipeline
+does today. Rather than guess at it with no real signal, "outdated" is left
+unimplemented until there's a real way to detect it; see docs/PROGRESS.md.
 
 Runs entirely offline after the first download (model is cached under
 ~/.cache/huggingface). No account, no API key, no per-call cost.
@@ -152,18 +160,26 @@ def _addresses_claim_specifics(claim, evidence_extract, trace=None):
 
 
 def classify(claim, evidence, trace=None):
-    """Same input/output shape as the LLM-based classifier it replaces."""
+    """Same input/output shape as the LLM-based classifier it replaces.
+
+    verdict is one of the four user-facing categories from issue #18:
+    supported / misrepresented / unsupported / outdated — "outdated" is not
+    produced by this function yet (see module docstring). matched_sources
+    stays a flat list of "title (origin)" strings for existing callers;
+    sources is the new richer {title, url} form so a UI can render an
+    actual clickable link instead of just a label."""
     if not evidence:
         return {
-            "verdict": "insufficient_evidence",
+            "verdict": "unsupported",
             "confidence": 1.0,
             "explanation": "No evidence was retrieved for this claim.",
             "matched_sources": [],
+            "sources": [],
         }
 
-    best_entailment = {"score": -1.0, "source": None, "key": None, "extract": None}
-    best_contradiction = {"score": -1.0, "source": None, "key": None, "extract": None}
-    best_neutral = {"score": -1.0, "source": None, "key": None, "extract": None}
+    best_entailment = {"score": -1.0, "source": None, "key": None, "extract": None, "url": None}
+    best_contradiction = {"score": -1.0, "source": None, "key": None, "extract": None, "url": None}
+    best_neutral = {"score": -1.0, "source": None, "key": None, "extract": None, "url": None}
 
     if trace is not None:
         trace["sources_checked"] = []
@@ -183,9 +199,15 @@ def classify(claim, evidence, trace=None):
                 "neutral": round(scores["neutral"], 4),
             })
         if scores["entailment"] > best_entailment["score"]:
-            best_entailment = {"score": scores["entailment"], "source": label, "key": key, "extract": e["extract"]}
+            best_entailment = {
+                "score": scores["entailment"], "source": label, "key": key,
+                "extract": e["extract"], "url": e.get("url"), "title": e["title"],
+            }
         if scores["contradiction"] > best_contradiction["score"]:
-            best_contradiction = {"score": scores["contradiction"], "source": label, "key": key, "extract": e["extract"]}
+            best_contradiction = {
+                "score": scores["contradiction"], "source": label, "key": key,
+                "extract": e["extract"], "url": e.get("url"), "title": e["title"],
+            }
         if scores["neutral"] > best_neutral["score"]:
             best_neutral = {"score": scores["neutral"], "source": label, "key": key, "extract": e["extract"]}
 
@@ -201,8 +223,11 @@ def classify(claim, evidence, trace=None):
         # exactly the kind of overconfidence this pipeline already got
         # burned by once (see the reverted single-keyword retrieval fallback
         # in medical_retrieval.py). Surface the conflict instead of guessing.
+        # Neither source unambiguously "supports" the claim, so this falls
+        # under "unsupported" rather than the more specific "misrepresented"
+        # (which implies one clear relevant source, not two disagreeing ones).
         return {
-            "verdict": "insufficient_evidence",
+            "verdict": "unsupported",
             "confidence": round(min(best_entailment["score"], best_contradiction["score"]), 4),
             "explanation": (
                 f"Conflicting evidence: '{best_entailment['source']}' entails the claim "
@@ -211,6 +236,10 @@ def classify(claim, evidence, trace=None):
                 f"(contradiction={best_contradiction['score']:.2f})."
             ),
             "matched_sources": [best_entailment["source"], best_contradiction["source"]],
+            "sources": [
+                {"title": best_entailment["title"], "url": best_entailment["url"]},
+                {"title": best_contradiction["title"], "url": best_contradiction["url"]},
+            ],
         }
 
     if (
@@ -226,9 +255,10 @@ def classify(claim, evidence, trace=None):
                     f"(entailment={best_entailment['score']:.2f})."
                 ),
                 "matched_sources": [best_entailment["source"]],
+                "sources": [{"title": best_entailment["title"], "url": best_entailment["url"]}],
             }
         return {
-            "verdict": "insufficient_evidence",
+            "verdict": "unsupported",
             "confidence": round(1 - best_entailment["score"], 4),
             "explanation": (
                 f"'{best_entailment['source']}' scored high entailment "
@@ -237,6 +267,7 @@ def classify(claim, evidence, trace=None):
                 f"topic — likely a topical-familiarity false positive, not real support."
             ),
             "matched_sources": [],
+            "sources": [],
         }
 
     if (
@@ -245,16 +276,17 @@ def classify(claim, evidence, trace=None):
     ):
         if _addresses_claim_specifics(claim, best_contradiction["extract"], trace=trace):
             return {
-                "verdict": "contradicted",
+                "verdict": "misrepresented",
                 "confidence": round(best_contradiction["score"], 4),
                 "explanation": (
                     f"Evidence from '{best_contradiction['source']}' contradicts the claim "
                     f"(contradiction={best_contradiction['score']:.2f})."
                 ),
                 "matched_sources": [best_contradiction["source"]],
+                "sources": [{"title": best_contradiction["title"], "url": best_contradiction["url"]}],
             }
         return {
-            "verdict": "insufficient_evidence",
+            "verdict": "unsupported",
             "confidence": round(1 - best_contradiction["score"], 4),
             "explanation": (
                 f"'{best_contradiction['source']}' scored high contradiction "
@@ -263,10 +295,11 @@ def classify(claim, evidence, trace=None):
                 f"topic — likely a topical-familiarity false positive, not a real refutation."
             ),
             "matched_sources": [],
+            "sources": [],
         }
 
     return {
-        "verdict": "insufficient_evidence",
+        "verdict": "unsupported",
         # Confidence in THIS verdict is how confident the model is that the
         # relationship is genuinely neutral — not `1 - <whatever score
         # happened to be highest>`, which was backwards: a high neutral
@@ -279,4 +312,5 @@ def classify(claim, evidence, trace=None):
             f"best contradiction={best_contradiction['score']:.2f})."
         ),
         "matched_sources": [],
+        "sources": [],
     }
