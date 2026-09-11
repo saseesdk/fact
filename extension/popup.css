@@ -12,6 +12,13 @@ h1 {
   margin: 0 0 2px;
 }
 
+.tagline {
+  color: #2f6f4e;
+  font-size: 0.8rem;
+  font-weight: 600;
+  margin: 0 0 4px;
+}
+
 .subtitle {
   color: #63695f;
   font-size: 0.78rem;
