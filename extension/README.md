@@ -14,6 +14,9 @@ front end for the same `verify_text()` pipeline.
    ```
 2. In Chrome, go to `chrome://extensions`, enable **Developer mode** (top
    right), click **Load unpacked**, and select this `extension/` folder.
+   A "How to use" tab (`onboarding.html`) opens automatically the first
+   time it's installed — also reachable any time via the "How to use this
+   extension" link at the bottom of the popup.
 
 ## Usage
 

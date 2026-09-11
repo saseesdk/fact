@@ -1,0 +1,76 @@
+body {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 32px 24px 60px;
+  font-family: -apple-system, "Segoe UI", Arial, sans-serif;
+  color: #1c2321;
+  background: #f5f6f2;
+  line-height: 1.5;
+}
+
+header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+header h1 {
+  font-size: 1.6rem;
+  margin: 0;
+}
+
+.tagline {
+  color: #2f6f4e;
+  font-weight: 600;
+  margin: 4px 0 28px;
+}
+
+section {
+  background: #ffffff;
+  border: 1px solid #d7dacd;
+  border-radius: 10px;
+  padding: 16px 20px;
+  margin-bottom: 16px;
+}
+
+section h2 {
+  font-size: 1.05rem;
+  margin: 0 0 8px;
+}
+
+section p, section li {
+  font-size: 0.92rem;
+}
+
+pre {
+  background: #1c2321;
+  color: #eceae2;
+  padding: 10px 12px;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  overflow-x: auto;
+}
+
+.legend {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.legend li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.dot.supported { background: #2f6f4e; }
+.dot.contradicted { background: #a13d3d; }
+.dot.insufficient_evidence { background: #9a8b4f; }
