@@ -152,7 +152,17 @@ def _addresses_claim_specifics(claim, evidence_extract, trace=None):
 
 
 def classify(claim, evidence, trace=None):
-    """Same input/output shape as the LLM-based classifier it replaces."""
+    """Same input/output shape as the LLM-based classifier it replaces.
+
+    issue #21 ("insufficient evidence when evidence exists"): this used to
+    only ever look at the single highest-scoring entailment/contradiction
+    candidate — if THAT one happened to fail the specifics gate below, the
+    whole claim fell back to insufficient_evidence even when a different,
+    slightly-lower-scoring item in the same evidence list would have passed
+    outright. Now walks each ranked list (entailment candidates, separately
+    contradiction candidates) and picks the first one that also passes the
+    specifics gate, so a pool of several evidence items actually gets used
+    as a pool, not just probed at its single top entry."""
     if not evidence:
         return {
             "verdict": "insufficient_evidence",
@@ -161,10 +171,7 @@ def classify(claim, evidence, trace=None):
             "matched_sources": [],
         }
 
-    best_entailment = {"score": -1.0, "source": None, "key": None, "extract": None}
-    best_contradiction = {"score": -1.0, "source": None, "key": None, "extract": None}
-    best_neutral = {"score": -1.0, "source": None, "key": None, "extract": None}
-
+    scored = []
     if trace is not None:
         trace["sources_checked"] = []
 
@@ -172,7 +179,6 @@ def classify(claim, evidence, trace=None):
         scores = _nli_scores(premise=e["extract"], hypothesis=claim)
         origin = e.get("origin")
         label = f"{e['title']} ({origin})" if origin else e["title"]
-        key = (e["title"], origin)
         if trace is not None:
             trace["sources_checked"].append({
                 "title": e["title"],
@@ -182,89 +188,123 @@ def classify(claim, evidence, trace=None):
                 "contradiction": round(scores["contradiction"], 4),
                 "neutral": round(scores["neutral"], 4),
             })
-        if scores["entailment"] > best_entailment["score"]:
-            best_entailment = {"score": scores["entailment"], "source": label, "key": key, "extract": e["extract"]}
-        if scores["contradiction"] > best_contradiction["score"]:
-            best_contradiction = {"score": scores["contradiction"], "source": label, "key": key, "extract": e["extract"]}
-        if scores["neutral"] > best_neutral["score"]:
-            best_neutral = {"score": scores["neutral"], "source": label, "key": key, "extract": e["extract"]}
+        scored.append({
+            "key": (e["title"], origin),
+            "source": label,
+            "extract": e["extract"],
+            "entailment": scores["entailment"],
+            "contradiction": scores["contradiction"],
+            "neutral": scores["neutral"],
+        })
 
-    if (
-        best_entailment["score"] >= ENTAILMENT_THRESHOLD
-        and best_contradiction["score"] >= CONTRADICTION_THRESHOLD
-        and best_entailment["key"] != best_contradiction["key"]
-    ):
+    entailment_candidates = sorted(
+        (e for e in scored if e["entailment"] >= ENTAILMENT_THRESHOLD),
+        key=lambda e: e["entailment"],
+        reverse=True,
+    )
+    contradiction_candidates = sorted(
+        (e for e in scored if e["contradiction"] >= CONTRADICTION_THRESHOLD),
+        key=lambda e: e["contradiction"],
+        reverse=True,
+    )
+
+    # An item can never clear both thresholds at once (entailment +
+    # contradiction + neutral sum to 1, and both thresholds are 0.55), so
+    # these two lists never share an item - no risk of "supporting" and
+    # "contradicting" evidence secretly being the same source scored twice.
+    entailment_winner = next(
+        (e for e in entailment_candidates if _addresses_claim_specifics(claim, e["extract"])), None
+    )
+    contradiction_winner = next(
+        (e for e in contradiction_candidates if _addresses_claim_specifics(claim, e["extract"])), None
+    )
+
+    if entailment_winner and contradiction_winner and entailment_winner["key"] != contradiction_winner["key"]:
         # Two different sources each strongly assert the opposite of the
-        # other. Picking whichever raw score happens to be a fraction
-        # higher and silently discarding the other would hide a genuine
-        # disagreement between sources behind a confident-looking verdict —
-        # exactly the kind of overconfidence this pipeline already got
-        # burned by once (see the reverted single-keyword retrieval fallback
-        # in medical_retrieval.py). Surface the conflict instead of guessing.
+        # other, AND (unlike the old raw-score-only conflict check) each one
+        # actually addresses the claim's specifics — a genuine disagreement
+        # between real matches, not one side being topical noise that
+        # happened to score high. Picking whichever score is a fraction
+        # higher and silently discarding the other would hide that
+        # disagreement behind a confident-looking verdict. Surface it
+        # instead of guessing.
+        _addresses_claim_specifics(claim, entailment_winner["extract"], trace=trace)
         return {
             "verdict": "insufficient_evidence",
-            "confidence": round(min(best_entailment["score"], best_contradiction["score"]), 4),
+            "confidence": round(min(entailment_winner["entailment"], contradiction_winner["contradiction"]), 4),
             "explanation": (
-                f"Conflicting evidence: '{best_entailment['source']}' entails the claim "
-                f"(entailment={best_entailment['score']:.2f}) while "
-                f"'{best_contradiction['source']}' contradicts it "
-                f"(contradiction={best_contradiction['score']:.2f})."
+                f"Conflicting evidence: '{entailment_winner['source']}' entails the claim "
+                f"(entailment={entailment_winner['entailment']:.2f}) while "
+                f"'{contradiction_winner['source']}' contradicts it "
+                f"(contradiction={contradiction_winner['contradiction']:.2f})."
             ),
-            "matched_sources": [best_entailment["source"], best_contradiction["source"]],
+            "matched_sources": [entailment_winner["source"], contradiction_winner["source"]],
         }
 
-    if (
-        best_entailment["score"] >= ENTAILMENT_THRESHOLD
-        and best_entailment["score"] >= best_contradiction["score"]
+    if entailment_winner:
+        _addresses_claim_specifics(claim, entailment_winner["extract"], trace=trace)
+        return {
+            "verdict": "supported",
+            "confidence": round(entailment_winner["entailment"], 4),
+            "explanation": (
+                f"Evidence from '{entailment_winner['source']}' entails the claim "
+                f"(entailment={entailment_winner['entailment']:.2f})."
+            ),
+            "matched_sources": [entailment_winner["source"]],
+        }
+
+    if contradiction_winner:
+        _addresses_claim_specifics(claim, contradiction_winner["extract"], trace=trace)
+        return {
+            "verdict": "contradicted",
+            "confidence": round(contradiction_winner["contradiction"], 4),
+            "explanation": (
+                f"Evidence from '{contradiction_winner['source']}' contradicts the claim "
+                f"(contradiction={contradiction_winner['contradiction']:.2f})."
+            ),
+            "matched_sources": [contradiction_winner["source"]],
+        }
+
+    # Nothing in either ranked list passed the specifics gate. Still surface
+    # the most informative near-miss (whichever side's raw top score was
+    # higher) instead of silently falling through to the generic neutral
+    # message, so the explanation stays as useful as before this change.
+    top_entailment = entailment_candidates[0] if entailment_candidates else None
+    top_contradiction = contradiction_candidates[0] if contradiction_candidates else None
+
+    if top_entailment and (
+        not top_contradiction or top_entailment["entailment"] >= top_contradiction["contradiction"]
     ):
-        if _addresses_claim_specifics(claim, best_entailment["extract"], trace=trace):
-            return {
-                "verdict": "supported",
-                "confidence": round(best_entailment["score"], 4),
-                "explanation": (
-                    f"Evidence from '{best_entailment['source']}' entails the claim "
-                    f"(entailment={best_entailment['score']:.2f})."
-                ),
-                "matched_sources": [best_entailment["source"]],
-            }
+        _addresses_claim_specifics(claim, top_entailment["extract"], trace=trace)
         return {
             "verdict": "insufficient_evidence",
-            "confidence": round(1 - best_entailment["score"], 4),
+            "confidence": round(1 - top_entailment["entailment"], 4),
             "explanation": (
-                f"'{best_entailment['source']}' scored high entailment "
-                f"(entailment={best_entailment['score']:.2f}) but never actually "
+                f"'{top_entailment['source']}' scored high entailment "
+                f"(entailment={top_entailment['entailment']:.2f}) but never actually "
                 f"addresses what the claim specifically asserts beyond its general "
                 f"topic — likely a topical-familiarity false positive, not real support."
             ),
             "matched_sources": [],
         }
 
-    if (
-        best_contradiction["score"] >= CONTRADICTION_THRESHOLD
-        and best_contradiction["score"] > best_entailment["score"]
-    ):
-        if _addresses_claim_specifics(claim, best_contradiction["extract"], trace=trace):
-            return {
-                "verdict": "contradicted",
-                "confidence": round(best_contradiction["score"], 4),
-                "explanation": (
-                    f"Evidence from '{best_contradiction['source']}' contradicts the claim "
-                    f"(contradiction={best_contradiction['score']:.2f})."
-                ),
-                "matched_sources": [best_contradiction["source"]],
-            }
+    if top_contradiction:
+        _addresses_claim_specifics(claim, top_contradiction["extract"], trace=trace)
         return {
             "verdict": "insufficient_evidence",
-            "confidence": round(1 - best_contradiction["score"], 4),
+            "confidence": round(1 - top_contradiction["contradiction"], 4),
             "explanation": (
-                f"'{best_contradiction['source']}' scored high contradiction "
-                f"(contradiction={best_contradiction['score']:.2f}) but never actually "
+                f"'{top_contradiction['source']}' scored high contradiction "
+                f"(contradiction={top_contradiction['contradiction']:.2f}) but never actually "
                 f"addresses what the claim specifically asserts beyond its general "
                 f"topic — likely a topical-familiarity false positive, not a real refutation."
             ),
             "matched_sources": [],
         }
 
+    best_neutral = max(scored, key=lambda e: e["neutral"])
+    best_entailment_score = max(e["entailment"] for e in scored)
+    best_contradiction_score = max(e["contradiction"] for e in scored)
     return {
         "verdict": "insufficient_evidence",
         # Confidence in THIS verdict is how confident the model is that the
@@ -272,11 +312,11 @@ def classify(claim, evidence, trace=None):
         # happened to be highest>`, which was backwards: a high neutral
         # score (real signal that no evidence source relates to the claim
         # either way) previously produced a LOW displayed confidence.
-        "confidence": round(best_neutral["score"], 4),
+        "confidence": round(best_neutral["neutral"], 4),
         "explanation": (
             f"No evidence source was confident enough either way "
-            f"(best entailment={best_entailment['score']:.2f}, "
-            f"best contradiction={best_contradiction['score']:.2f})."
+            f"(best entailment={best_entailment_score:.2f}, "
+            f"best contradiction={best_contradiction_score:.2f})."
         ),
         "matched_sources": [],
     }

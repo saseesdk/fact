@@ -1,0 +1,130 @@
+[
+  {
+    "claim": "The capital of France is Paris.",
+    "expected": "supported",
+    "actual": "supported",
+    "correct": true,
+    "confidence": 0.999,
+    "evidence_count": 8
+  },
+  {
+    "claim": "Mount Everest is the tallest mountain above sea level on Earth.",
+    "expected": "supported",
+    "actual": "supported",
+    "correct": true,
+    "confidence": 0.9937,
+    "evidence_count": 8
+  },
+  {
+    "claim": "Water boils at 100 degrees Celsius at sea level.",
+    "expected": "supported",
+    "actual": "insufficient_evidence",
+    "correct": false,
+    "confidence": 0.8149,
+    "evidence_count": 8
+  },
+  {
+    "claim": "The Great Wall of China is located in China.",
+    "expected": "supported",
+    "actual": "supported",
+    "correct": true,
+    "confidence": 0.9995,
+    "evidence_count": 8
+  },
+  {
+    "claim": "Albert Einstein developed the theory of general relativity.",
+    "expected": "supported",
+    "actual": "supported",
+    "correct": true,
+    "confidence": 0.999,
+    "evidence_count": 8
+  },
+  {
+    "claim": "The Amazon River is located in South America.",
+    "expected": "supported",
+    "actual": "supported",
+    "correct": true,
+    "confidence": 0.998,
+    "evidence_count": 8
+  },
+  {
+    "claim": "The capital of Australia is Sydney.",
+    "expected": "contradicted",
+    "actual": "insufficient_evidence",
+    "correct": false,
+    "confidence": 0.9912,
+    "evidence_count": 8
+  },
+  {
+    "claim": "The Great Wall of China is visible from space with the naked eye.",
+    "expected": "contradicted",
+    "actual": "insufficient_evidence",
+    "correct": false,
+    "confidence": 0.2808,
+    "evidence_count": 8
+  },
+  {
+    "claim": "Napoleon Bonaparte was born in Italy.",
+    "expected": "contradicted",
+    "actual": "insufficient_evidence",
+    "correct": false,
+    "confidence": 0.957,
+    "evidence_count": 3
+  },
+  {
+    "claim": "The sun revolves around the Earth.",
+    "expected": "contradicted",
+    "actual": "insufficient_evidence",
+    "correct": false,
+    "confidence": 0.8887,
+    "evidence_count": 8
+  },
+  {
+    "claim": "Humans only use 10 percent of their brains.",
+    "expected": "contradicted",
+    "actual": "insufficient_evidence",
+    "correct": false,
+    "confidence": 0.042,
+    "evidence_count": 8
+  },
+  {
+    "claim": "The Eiffel Tower is located in London.",
+    "expected": "contradicted",
+    "actual": "insufficient_evidence",
+    "correct": false,
+    "confidence": 0.0005,
+    "evidence_count": 8
+  },
+  {
+    "claim": "Bengaluru has the best weather in India.",
+    "expected": "insufficient_evidence",
+    "actual": "contradicted",
+    "correct": false,
+    "confidence": 0.9473,
+    "evidence_count": 4
+  },
+  {
+    "claim": "There are more than 10 billion habitable exoplanets in the Milky Way.",
+    "expected": "insufficient_evidence",
+    "actual": "insufficient_evidence",
+    "correct": true,
+    "confidence": 0.9399,
+    "evidence_count": 8
+  },
+  {
+    "claim": "Coffee is objectively better than tea.",
+    "expected": "insufficient_evidence",
+    "actual": "insufficient_evidence",
+    "correct": true,
+    "confidence": 0.9185,
+    "evidence_count": 8
+  },
+  {
+    "claim": "The stock market will crash in 2027.",
+    "expected": "insufficient_evidence",
+    "actual": "insufficient_evidence",
+    "correct": true,
+    "confidence": 0.6196,
+    "evidence_count": 8
+  }
+]
