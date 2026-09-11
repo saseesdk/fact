@@ -1,0 +1,118 @@
+body {
+  width: 360px;
+  margin: 0;
+  padding: 12px;
+  font-family: -apple-system, "Segoe UI", Arial, sans-serif;
+  color: #1c2321;
+  background: #f5f6f2;
+}
+
+h1 {
+  font-size: 1.05rem;
+  margin: 0 0 2px;
+}
+
+.subtitle {
+  color: #63695f;
+  font-size: 0.78rem;
+  margin: 0 0 8px;
+}
+
+textarea {
+  width: 100%;
+  min-height: 90px;
+  padding: 8px;
+  border: 1px solid #d7dacd;
+  border-radius: 6px;
+  font: inherit;
+  font-size: 0.85rem;
+  resize: vertical;
+  box-sizing: border-box;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+button {
+  font: inherit;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: none;
+  background: #2f6f4e;
+  color: #fff;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.status {
+  color: #63695f;
+  font-size: 0.78rem;
+}
+
+#results {
+  margin-top: 10px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.claim {
+  margin-bottom: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #eceae2;
+}
+
+.claim:last-child {
+  border-bottom: none;
+}
+
+.claim-text {
+  font-weight: 600;
+  font-size: 0.82rem;
+  margin-bottom: 4px;
+}
+
+.verdict {
+  padding: 6px 8px;
+  border-radius: 6px;
+  border-left: 3px solid;
+  font-size: 0.8rem;
+}
+
+.verdict-label {
+  display: block;
+  font-weight: 700;
+  text-transform: uppercase;
+  font-size: 0.68rem;
+  letter-spacing: 0.03em;
+  margin-bottom: 2px;
+}
+
+.verdict.supported { background: #dff2e4; border-color: #2f6f4e; color: #1f5238; }
+.verdict.contradicted { background: #f7dede; border-color: #a13d3d; color: #7a2626; }
+.verdict.insufficient_evidence { background: #f1efe5; border-color: #9a8b4f; color: #6b5f30; }
+
+.sources {
+  display: block;
+  margin-top: 3px;
+  font-size: 0.7rem;
+  opacity: 0.85;
+}
+
+.empty, .error-text {
+  font-size: 0.82rem;
+  color: #63695f;
+  font-style: italic;
+}
+
+.error-text {
+  color: #a13d3d;
+}

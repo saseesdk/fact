@@ -66,10 +66,10 @@ OPINION_MARGIN = 0.05
 
 
 _SENTENCE_BOUNDARY = re.compile(
-    r"(?<=[.!?])(?:\[\d+\])*\s+"          # normal case: punctuation (+ optional
+    r"(?<=[.!?])(?:\[\d{1,4}\]){0,8}\s+"  # normal case: punctuation (+ optional
                                             # citations, e.g. Wikipedia's "life.[4][5]")
                                             # followed by whitespace
-    r"|(?<=[.!?])(?:\[\d+\])*(?=[A-Z])"    # punctuation directly followed by a
+    r"|(?<=[.!?])(?:\[\d{1,4}\]){0,8}(?=[A-Z])"  # punctuation directly followed by a
                                             # capital letter, no space at all —
                                             # copy-pasted web text routinely loses
                                             # the space/newline between a sentence
