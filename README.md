@@ -1,18 +1,28 @@
-# Fact Check — prototype
+# Factual Verification Extension — Prototype Stage
 
-Verifies factual claims in text against real evidence, fully local and
-free (no paid API, no external LLM call — the only outside dependency is a
-free-tier search API key). See **`docs/ARCHITECTURE.md`** for a full
-file-by-file explanation of how this works and what each file does — read
-that first if you're new here. `docs/ROADMAP.md` is the long-term plan;
-`docs/PROGRESS.md` is a running log of what's been tried, found, and
-decided session by session.
+Full context and roadmap: `Factual_Verification_Extension_Master_Plan.docx` (on Desktop).
 
-Current setup: general-domain claims (not restricted to any one topic),
-searched via **LangSearch** (a web search API), compared using a local NLI
-model. See `docs/PROGRESS.md` for why LangSearch alone right now, and a
-real limitation found with it (it can return a page merely *using* a
-trusted name like "Wikipedia" without actually being that site).
+This repo currently contains only the **Phase 2 prototype** from that plan:
+a standalone script that proves out the core loop — `claim -> evidence retrieval -> verdict`
+— before any backend API, database, or Chrome extension gets built.
+
+Current domain: **medical claims only** (see `ROADMAP.md` Phase 1), checked
+against MedlinePlus (`medical_retrieval.py`) — a National Library of
+Medicine / NIH source, picked over Wikipedia for medical claims specifically
+because it's authored and reviewed by health professionals, not open
+community editing. Other domains (general trivia via the older
+`retrieval.py`, programming docs, PubMed for research-specific claims) can
+be wired back in later as separate retrieval modules with the same
+`retrieve_evidence()` shape.
+
+Claim segregation (fact vs. opinion) uses a dedicated zero-shot model
+(`MoritzLaurer/deberta-v3-base-zeroshot-v2.0`, `claim_filter.py`).
+Claim-vs-evidence verdict classification uses a separate NLI model trained
+on FEVER (`MoritzLaurer/DeBERTa-v3-base-mnli-fever-anli`, `local_classifier.py`)
+— the "claim + evidence -> supports/refutes/not enough info" task, which
+maps directly onto our verdict categories. Both are CPU-only, ~200M params
+or less, no API key, no external LLM, no per-call cost, fully offline after
+the first download.
 
 ## Development guide
 #### Branches
@@ -35,7 +45,7 @@ trusted name like "Wikipedia" without actually being that site).
 - Use clear commit messages and branch names.
 - Resolve all conflicts and ensure tests pass before merging.
 - master must always remain production-ready.
-  
+
 ## Setup
 
 Use the project's own virtualenv (kept separate from any other project's
