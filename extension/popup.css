@@ -58,6 +58,29 @@ button:disabled {
   font-size: 0.78rem;
 }
 
+.progress {
+  margin-top: 8px;
+}
+
+.progress-label {
+  font-size: 0.78rem;
+  color: #63695f;
+  margin-bottom: 4px;
+}
+
+.progress-track {
+  height: 6px;
+  border-radius: 3px;
+  background: #eceae2;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: #2f6f4e;
+  transition: width 0.2s ease;
+}
+
 #results {
   margin-top: 10px;
   max-height: 320px;

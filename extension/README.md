@@ -2,7 +2,7 @@
 
 A Manifest V3 Chrome extension over the same local backend (`src/app.py`)
 used by the web UI (`src/page/index.html`) — no new logic, just a second
-front end for the same `verify_text()` pipeline.
+front end over the same `/api/segregate` + `/api/verify` calls.
 
 ## Setup
 
@@ -18,14 +18,27 @@ front end for the same `verify_text()` pipeline.
 ## Usage
 
 - **Select text on any page, right-click, "Verify with Fact Check"** —
-  each verified sentence gets highlighted directly on the page, color-coded
-  by verdict (green/red/yellow), and hovering one shows its confidence and
-  which source it was compared against. A floating summary panel in the
+  a live progress bar ("Checking claim 3 of 7…") tracks claims as they
+  finish, and each verified sentence gets highlighted directly on the page
+  as soon as its own verdict is in (not all at once at the end), color-coded
+  by verdict (green/red/yellow). Hovering a highlight shows its confidence
+  and which source it was compared against. A floating summary panel in the
   top-right also lists every claim. Sentences that were skipped as
   opinion/not checkable are left unhighlighted.
 - **Click the toolbar icon** for a popup where you can paste/type text
   directly, for text that isn't already on a page (no inline highlighting
-  in this case, since there's no page selection to highlight).
+  in this case, since there's no page selection to highlight — the popup
+  still shows the same live progress bar).
+
+## How the progress bar works
+
+Claims are verified one at a time — `background.js` calls `POST
+/api/segregate` once to split the text into checkable claims, then `POST
+/api/verify` once per claim, in sequence (`verifyTextWithProgress`). Each
+of those per-claim calls is what lets it report "N of total done" as it
+goes, instead of the previous single `/api/verify_text` call that only
+resolved once every claim was already checked, with no visibility into
+which claim it was on or how many were left.
 
 ## How inline highlighting works
 

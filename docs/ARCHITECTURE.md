@@ -58,11 +58,12 @@ app.py exposes it over HTTP for the web UI (src/page/index.html)
   `verify_text(text)` runs a whole paragraph: splits it, filters to
   checkable claims, calls `verify()` on each. Also runnable directly:
   `python src/verify.py "some claim"`.
-- **`src/app.py`** — Flask backend exposing `verify.py` over HTTP for the
-  web UI: `POST /api/segregate` (fact/opinion split only, fast),
-  `POST /api/verify` (one claim, full pipeline), `POST /api/verify_text`
-  (whole paragraph, used by the browser extension on other branches).
-  `GET /` serves the web UI page itself.
+- **`src/app.py`** — Flask backend exposing `verify.py` over HTTP:
+  `POST /api/segregate` (fact/opinion split only, fast), `POST /api/verify`
+  (one claim, full pipeline). Both the web UI and the browser extension call
+  segregate once then verify per claim — one call per claim is what lets the
+  extension show a live "checking claim 3 of 7" progress bar instead of one
+  opaque multi-minute wait. `GET /` serves the web UI page itself.
 
 ### Step 1 — sentence splitting + fact/opinion filter
 
