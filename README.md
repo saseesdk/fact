@@ -14,6 +14,28 @@ model. See `docs/PROGRESS.md` for why LangSearch alone right now, and a
 real limitation found with it (it can return a page merely *using* a
 trusted name like "Wikipedia" without actually being that site).
 
+## Development guide
+#### Branches
+- master — Production-ready code. Permanent branch.
+- develop — Testing/integration branch. Permanent branch.
+- feature_* — Temporary branches for new features, fixes, or changes.
+  
+#### Workflow
+1. Always create a new feature_* branch from the latest master.
+2. Do all development and individual testing on the feature branch.
+3. Once testing is complete, create a PR and merge the feature branch into develop.
+4. Admin tests the changes on develop.
+5. If issues are found, fix them on the feature branch, retest, and merge the changes back into develop.
+6. Once both admins agree on the changes, merge develop into master.
+7. master is then deployed to production.
+
+#### Rules
+- Do not develop directly on master or develop.
+- Keep feature branches focused on a single change.
+- Use clear commit messages and branch names.
+- Resolve all conflicts and ensure tests pass before merging.
+- master must always remain production-ready.
+  
 ## Setup
 
 Use the project's own virtualenv (kept separate from any other project's
