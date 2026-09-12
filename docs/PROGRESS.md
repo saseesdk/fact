@@ -4,6 +4,59 @@ Running log of what's been decided and done, session by session. `ROADMAP.md`
 is the long-term phase plan; `README.md` is setup/usage; this file is "what
 actually happened and what's still open" — read this first after a break.
 
+## 2026-09-12 — better-claim-matching: pick the best passing candidate, not just the top score (issue #21)
+
+Issue #21's first complaint: "system results in insufficient evidence when
+evidence exists." Root cause confirmed directly in the trace output:
+`classify()` only ever checked the single highest-scoring
+entailment/contradiction candidate against `_addresses_claim_specifics()` —
+if that one candidate failed the gate (e.g. "Type 1 diabetes can be cured
+by drinking more water" landing on a generic MedlinePlus genetics page that
+never mentions "water"/"cure"), the whole claim fell back to
+`insufficient_evidence` even when a different, lower-scoring item in the
+same evidence list would have passed outright.
+
+**Fix:** rank all evidence above threshold on each side separately
+(entailment candidates, contradiction candidates) and walk down each
+ranked list for the first candidate that also passes the specifics gate,
+instead of only ever probing the single top entry. As a side effect, the
+"conflicting evidence" branch got stricter too: both sides now have to
+have *passed* the specifics gate to count as a real conflict, not just
+cleared the raw score threshold — a topically-noisy high-scoring source
+no longer forces `insufficient_evidence` on its own.
+
+**Regression found and fixed before shipping:** searching arbitrarily deep
+into each ranked list measurably backfired on claims that have no real
+evidence either way — opinions/predictions that slip past
+`claim_filter.py` (e.g. "The stock market will crash in 2027", "Coffee is
+objectively better than tea"). Deep enough search eventually turns up
+*something* that coincidentally passes the gate, producing a confident
+wrong verdict where `insufficient_evidence` was actually correct — which
+is issue #21's *second* complaint ("results in supported when the
+sentence is not a claim") made worse by the fix for the first one. Capped
+search to the top 3 candidates per side (`MAX_CANDIDATES_PER_SIDE`),
+which keeps the fix for the common case (rank-1 fails the gate, rank-2/3
+would pass) while bounding how far it can dig for a coincidental match.
+
+**Measurement honesty, since this matters here:** validating this took 5
+full general-suite runs, and the numbers were noisier than expected —
+partly genuine live-search variance (a same-day fresh `dev` baseline
+scored 8/16, not the 9/16 in an earlier session's log — same code,
+different day, different LangSearch results), and partly a mid-run DNS
+failure in this sandbox that invalidated one run outright (12 of 16
+claims got zero evidence and defaulted to `insufficient_evidence`,
+coincidentally "passing" the 4 opinion/prediction cases for the wrong
+reason). The depth-cap decision above is based on the *mechanism*
+(confirmed by reading the actual explanations/trace for the specific
+claims that flipped, not just the aggregate score) rather than a single
+trusted before/after number. **Recommend re-running the general and
+medical suites 2-3x before merging** to get a trustworthy pass-rate
+delta — this PR's own aggregate numbers should not be taken as final.
+
+Not addressed here: issue #21's second complaint in general (a non-claim
+getting a confident verdict) is a `claim_filter.py` fact/opinion-precision
+problem upstream of this file, not fully fixed by the depth cap above
+(which only bounds the symptom for claims that already reached this far).
 ## 2026-09-12 — better-websearch-retrieval: multi-query merge + relevance gate (issue #20)
 
 Issue #20 complained LangSearch "retrieves irrelevant sources" and "doesn't

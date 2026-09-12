@@ -188,7 +188,6 @@ def classify(claim, evidence, trace=None):
         scores = _nli_scores(premise=e["extract"], hypothesis=claim)
         origin = e.get("origin")
         label = f"{e['title']} ({origin})" if origin else e["title"]
-        key = (e["title"], origin)
         if trace is not None:
             trace["sources_checked"].append({
                 "title": e["title"],
@@ -230,10 +229,8 @@ def classify(claim, evidence, trace=None):
             "verdict": "unsupported",
             "confidence": round(min(best_entailment["score"], best_contradiction["score"]), 4),
             "explanation": (
-                f"Conflicting evidence: '{best_entailment['source']}' entails the claim "
-                f"(entailment={best_entailment['score']:.2f}) while "
-                f"'{best_contradiction['source']}' contradicts it "
-                f"(contradiction={best_contradiction['score']:.2f})."
+                f"Evidence from '{entailment_winner['source']}' entails the claim "
+                f"(entailment={entailment_winner['entailment']:.2f})."
             ),
             "matched_sources": [best_entailment["source"], best_contradiction["source"]],
             "sources": [
@@ -242,9 +239,27 @@ def classify(claim, evidence, trace=None):
             ],
         }
 
-    if (
-        best_entailment["score"] >= ENTAILMENT_THRESHOLD
-        and best_entailment["score"] >= best_contradiction["score"]
+    if contradiction_winner:
+        _addresses_claim_specifics(claim, contradiction_winner["extract"], trace=trace)
+        return {
+            "verdict": "contradicted",
+            "confidence": round(contradiction_winner["contradiction"], 4),
+            "explanation": (
+                f"Evidence from '{contradiction_winner['source']}' contradicts the claim "
+                f"(contradiction={contradiction_winner['contradiction']:.2f})."
+            ),
+            "matched_sources": [contradiction_winner["source"]],
+        }
+
+    # Nothing in either ranked list passed the specifics gate. Still surface
+    # the most informative near-miss (whichever side's raw top score was
+    # higher) instead of silently falling through to the generic neutral
+    # message, so the explanation stays as useful as before this change.
+    top_entailment = entailment_candidates[0] if entailment_candidates else None
+    top_contradiction = contradiction_candidates[0] if contradiction_candidates else None
+
+    if top_entailment and (
+        not top_contradiction or top_entailment["entailment"] >= top_contradiction["contradiction"]
     ):
         if _addresses_claim_specifics(claim, best_entailment["extract"], trace=trace):
             return {
@@ -261,8 +276,8 @@ def classify(claim, evidence, trace=None):
             "verdict": "unsupported",
             "confidence": round(1 - best_entailment["score"], 4),
             "explanation": (
-                f"'{best_entailment['source']}' scored high entailment "
-                f"(entailment={best_entailment['score']:.2f}) but never actually "
+                f"'{top_entailment['source']}' scored high entailment "
+                f"(entailment={top_entailment['entailment']:.2f}) but never actually "
                 f"addresses what the claim specifically asserts beyond its general "
                 f"topic — likely a topical-familiarity false positive, not real support."
             ),
@@ -289,8 +304,8 @@ def classify(claim, evidence, trace=None):
             "verdict": "unsupported",
             "confidence": round(1 - best_contradiction["score"], 4),
             "explanation": (
-                f"'{best_contradiction['source']}' scored high contradiction "
-                f"(contradiction={best_contradiction['score']:.2f}) but never actually "
+                f"'{top_contradiction['source']}' scored high contradiction "
+                f"(contradiction={top_contradiction['contradiction']:.2f}) but never actually "
                 f"addresses what the claim specifically asserts beyond its general "
                 f"topic — likely a topical-familiarity false positive, not a real refutation."
             ),
@@ -298,6 +313,9 @@ def classify(claim, evidence, trace=None):
             "sources": [],
         }
 
+    best_neutral = max(scored, key=lambda e: e["neutral"])
+    best_entailment_score = max(e["entailment"] for e in scored)
+    best_contradiction_score = max(e["contradiction"] for e in scored)
     return {
         "verdict": "unsupported",
         # Confidence in THIS verdict is how confident the model is that the
@@ -305,11 +323,11 @@ def classify(claim, evidence, trace=None):
         # happened to be highest>`, which was backwards: a high neutral
         # score (real signal that no evidence source relates to the claim
         # either way) previously produced a LOW displayed confidence.
-        "confidence": round(best_neutral["score"], 4),
+        "confidence": round(best_neutral["neutral"], 4),
         "explanation": (
             f"No evidence source was confident enough either way "
-            f"(best entailment={best_entailment['score']:.2f}, "
-            f"best contradiction={best_contradiction['score']:.2f})."
+            f"(best entailment={best_entailment_score:.2f}, "
+            f"best contradiction={best_contradiction_score:.2f})."
         ),
         "matched_sources": [],
         "sources": [],
