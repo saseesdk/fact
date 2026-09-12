@@ -137,6 +137,18 @@ button:disabled {
   opacity: 0.85;
 }
 
+.how-to-use {
+  display: block;
+  margin-top: 10px;
+  font-size: 0.76rem;
+  color: #2f6f4e;
+  text-decoration: none;
+}
+
+.how-to-use:hover {
+  text-decoration: underline;
+}
+
 .empty, .error-text {
   font-size: 0.82rem;
   color: #63695f;

@@ -1,0 +1,72 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>How to use Fact Check</title>
+<link rel="stylesheet" href="onboarding.css" />
+</head>
+<body>
+  <header>
+    <h1>Fact Check</h1>
+  </header>
+  <p class="tagline">Verify claims against real sources — fully offline, right where you read them.</p>
+
+  <section>
+    <h2>1. Start the local backend</h2>
+    <p>
+      This extension never sends anything to the cloud — it talks to a small
+      server running on your own machine. Before verifying anything, start it
+      once from a terminal:
+    </p>
+    <pre>cd fact
+venv\Scripts\python src\app.py</pre>
+    <p>Leave that window open while you use the extension. If a check ever
+      fails with "Could not reach the local Fact Check server", this is the
+      first thing to check.</p>
+  </section>
+
+  <section>
+    <h2>2. Verify text on any page</h2>
+    <ol>
+      <li>Select a sentence or paragraph on any webpage.</li>
+      <li>Right-click the selection and choose <strong>"Verify with Fact Check"</strong>.</li>
+      <li>A panel opens in the top-right with a live progress bar as each
+        claim is checked, and the selected text on the page itself gets
+        highlighted, color-coded by verdict, as each result comes in.</li>
+      <li>Hover a highlight to see its confidence and which source it was
+        compared against.</li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>3. Or paste text directly</h2>
+    <p>
+      Click the toolbar icon to open the popup, paste in a sentence or
+      paragraph, and click <strong>Verify</strong>. Useful for text that
+      isn't already on a page — a document, an email, something someone said.
+    </p>
+  </section>
+
+  <section>
+    <h2>What the colors mean</h2>
+    <ul class="legend">
+      <li><span class="dot supported"></span> <strong>Supported</strong> — a source was found that backs up the claim.</li>
+      <li><span class="dot contradicted"></span> <strong>Contradicted</strong> — a source was found that disagrees with the claim.</li>
+      <li><span class="dot insufficient_evidence"></span> <strong>Insufficient evidence</strong> — nothing found confident enough either way. Not the same as "false".</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>What this doesn't do (yet)</h2>
+    <ul>
+      <li>Opinions, predictions, and subjective statements are skipped on
+        purpose — only checkable factual claims are verified.</li>
+      <li>Sources aren't identity-verified — a result titled like a
+        well-known site isn't guaranteed to be that site's real domain.</li>
+      <li>Everything runs on your own CPU, so a claim can take a minute or
+        more to check — the progress bar is there so you can see it's working,
+        not stuck.</li>
+    </ul>
+  </section>
+</body>
+</html>

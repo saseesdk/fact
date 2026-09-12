@@ -6,12 +6,17 @@
 
 const API_BASE = "http://127.0.0.1:5000";
 
-chrome.runtime.onInstalled.addListener(() => {
+chrome.runtime.onInstalled.addListener((details) => {
   chrome.contextMenus.create({
     id: "verify-selection",
     title: 'Verify with Fact Check: "%s"',
     contexts: ["selection"],
   });
+  // Only on a fresh install, not every update/reload while developing —
+  // nobody wants a tab popping open every time the extension reloads.
+  if (details.reason === "install") {
+    chrome.tabs.create({ url: chrome.runtime.getURL("onboarding.html") });
+  }
 });
 
 // MV3 service workers get torn down by Chrome after ~30s of being
