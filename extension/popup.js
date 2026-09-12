@@ -2,6 +2,9 @@ const input = document.getElementById("input");
 const runBtn = document.getElementById("run");
 const statusEl = document.getElementById("status");
 const resultsEl = document.getElementById("results");
+const progressEl = document.getElementById("progress");
+const progressLabel = document.getElementById("progressLabel");
+const progressFill = document.getElementById("progressFill");
 
 function escapeHtml(text) {
   const div = document.createElement("div");
@@ -33,26 +36,48 @@ function renderResults(data) {
     .join("");
 }
 
+function setProgress(done, total) {
+  progressEl.hidden = false;
+  const pct = total ? Math.round((done / total) * 100) : 0;
+  progressFill.style.width = `${pct}%`;
+  progressLabel.textContent =
+    total === 0
+      ? "No checkable claims found yet…"
+      : done >= total
+      ? `Finished checking ${total} claim(s).`
+      : `Checking claim ${done + 1} of ${total}… (${pct}%)`;
+}
+
+// Broadcast from background.js as each claim's verdict comes back (see
+// verifyTextWithProgress in background.js) — only reaches this listener
+// while the popup is open, which is fine: the popup has nothing to update
+// while it's closed anyway.
+chrome.runtime.onMessage.addListener((message) => {
+  if (message.type !== "FACTCHECK_PROGRESS") return;
+  setProgress(message.done, message.total);
+});
+
 async function run() {
   const text = input.value;
   if (!text.trim()) return;
   runBtn.disabled = true;
-  statusEl.textContent = "Checking… can take a minute or two (runs fully offline).";
+  statusEl.textContent = "";
   resultsEl.innerHTML = "";
+  progressEl.hidden = false;
+  progressFill.style.width = "0%";
+  progressLabel.textContent = "Finding checkable claims…";
 
   chrome.runtime.sendMessage({ type: "FACTCHECK_VERIFY_TEXT", text }, (response) => {
     runBtn.disabled = false;
+    progressEl.hidden = true;
     if (chrome.runtime.lastError) {
-      statusEl.textContent = "";
       resultsEl.innerHTML = `<p class="error-text">Failed: ${escapeHtml(chrome.runtime.lastError.message)}</p>`;
       return;
     }
     if (!response.ok) {
-      statusEl.textContent = "";
       resultsEl.innerHTML = `<p class="error-text">Failed: ${escapeHtml(response.error)}</p>`;
       return;
     }
-    statusEl.textContent = "";
     renderResults(response.data);
   });
 }

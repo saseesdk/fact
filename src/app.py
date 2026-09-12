@@ -10,7 +10,7 @@ from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 
 from claim_filter import segregate
-from verify import verify, verify_text
+from verify import verify
 
 UI_DIR = Path(__file__).parent
 
@@ -42,19 +42,6 @@ def api_verify():
     if not claim.strip():
         return jsonify({"error": "No claim provided."}), 400
     return jsonify(verify(claim))
-
-
-@app.post("/api/verify_text")
-def api_verify_text():
-    """One-call version for the extension: raw selected text in, every
-    checkable claim verified, in one round trip — the web UI does this as
-    two separate calls (segregate, then verify per claim) since it shows
-    segregation results before the user opts into the slower verify step,
-    but a browser extension has no such intermediate screen to show."""
-    text = (request.get_json(silent=True) or {}).get("text", "")
-    if not text.strip():
-        return jsonify({"error": "No text provided."}), 400
-    return jsonify(verify_text(text))
 
 
 @app.errorhandler(Exception)

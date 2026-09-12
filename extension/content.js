@@ -30,6 +30,11 @@ let tooltipEl = null;
 // page picks up the NEW selection, not the first one.
 let capturedRange = null;
 
+// Verified claims collected so far during an in-progress check, so the
+// partial list can be re-rendered under the live progress bar as each
+// claim finishes, not just once at the very end.
+let liveResults = [];
+
 function ensurePanel() {
   if (panel) return panel;
   panel = document.createElement("div");
@@ -59,15 +64,8 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
-function renderResult(data) {
-  if (!data.verified || data.verified.length === 0) {
-    setBody(
-      `<p class="factcheck-empty">No checkable factual claims found in the selected text.</p>`
-    );
-    return;
-  }
-
-  const claims = data.verified
+function renderClaims(list) {
+  return list
     .map((r) => {
       const sources = r.matched_sources?.length
         ? `<div class="factcheck-sources">Source: ${escapeHtml(r.matched_sources.join(", "))}</div>`
@@ -84,12 +82,38 @@ function renderResult(data) {
       `;
     })
     .join("");
+}
+
+function renderProgress(done, total) {
+  if (total === 0) {
+    return `<p class="factcheck-status">No checkable factual claims found yet…</p>`;
+  }
+  const pct = Math.round((done / total) * 100);
+  const label =
+    done >= total
+      ? `Finished checking ${total} claim(s).`
+      : `Checking claim ${done + 1} of ${total}… (${pct}%)`;
+  return `
+    <div class="factcheck-progress">
+      <div class="factcheck-progress-label">${label}</div>
+      <div class="factcheck-progress-track"><div class="factcheck-progress-fill" style="width:${pct}%"></div></div>
+    </div>
+  `;
+}
+
+function renderResult(data) {
+  if (!data.verified || data.verified.length === 0) {
+    setBody(
+      `<p class="factcheck-empty">No checkable factual claims found in the selected text.</p>`
+    );
+    return;
+  }
 
   const skippedNote = data.skipped_non_factual?.length
     ? `<p class="factcheck-skipped">${data.skipped_non_factual.length} sentence(s) skipped as opinion/not checkable.</p>`
     : "";
 
-  setBody(claims + skippedNote);
+  setBody(renderClaims(data.verified) + skippedNote);
 }
 
 // ---- Inline highlighting -------------------------------------------------
@@ -229,14 +253,23 @@ chrome.runtime.onMessage.addListener((message) => {
   if (message.type === "FACTCHECK_LOADING") {
     const sel = window.getSelection();
     capturedRange = sel && sel.rangeCount > 0 && !sel.isCollapsed ? sel.getRangeAt(0).cloneRange() : null;
-    setBody(
-      `<p class="factcheck-status">Checking claims against local sources… this runs fully offline on your own machine and can take a minute or two per claim.</p>`
-    );
-  } else if (message.type === "FACTCHECK_RESULT") {
-    renderResult(message.data);
-    if (message.data.verified?.length) {
-      highlightVerifiedSentences(capturedRange, message.data.verified);
+    liveResults = [];
+    setBody(`<p class="factcheck-status">Finding checkable claims…</p>`);
+  } else if (message.type === "FACTCHECK_PROGRESS") {
+    const { done, total, latest } = message;
+    if (latest) {
+      liveResults.push(latest);
+      // Highlight this one sentence as soon as its verdict is in, rather
+      // than waiting for every claim to finish — matches the progress bar's
+      // claim-by-claim pace instead of everything appearing at once at the end.
+      highlightVerifiedSentences(capturedRange, [latest]);
     }
+    setBody(renderProgress(done, total) + renderClaims(liveResults));
+  } else if (message.type === "FACTCHECK_RESULT") {
+    // Claims were already rendered and highlighted incrementally as
+    // FACTCHECK_PROGRESS messages arrived above — this just adds the final
+    // "N sentence(s) skipped" note, and re-renders in the final claim order.
+    renderResult(message.data);
   } else if (message.type === "FACTCHECK_ERROR") {
     setBody(`<p class="factcheck-status factcheck-error-text">Failed: ${escapeHtml(message.error)}</p>`);
   }

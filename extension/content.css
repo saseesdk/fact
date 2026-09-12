@@ -124,6 +124,29 @@
   margin: 0;
 }
 
+#factcheck-panel .factcheck-progress {
+  margin-bottom: 10px;
+}
+
+#factcheck-panel .factcheck-progress-label {
+  font-size: 12px;
+  color: #63695f;
+  margin-bottom: 4px;
+}
+
+#factcheck-panel .factcheck-progress-track {
+  height: 6px;
+  border-radius: 3px;
+  background: #eceae2;
+  overflow: hidden;
+}
+
+#factcheck-panel .factcheck-progress-fill {
+  height: 100%;
+  background: #2f6f4e;
+  transition: width 0.2s ease;
+}
+
 /* Inline highlights, wrapped directly around the verified text on the
    page itself — an unknown custom element (<factcheck-mark>), not span/mark,
    so the host page's own CSS can't accidentally restyle it. Deliberately
