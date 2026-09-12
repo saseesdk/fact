@@ -100,9 +100,14 @@ app.py exposes it over HTTP for the web UI (src/page/index.html)
 
 - **`src/websearch_retrieval.py`** — the active evidence source. Calls
   LangSearch (a web search API, needs `LANGSEARCH_API_KEY` in a local
-  `.env`, gitignored) using the query strategy above, then drops any
-  non-English result before it can reach the classifier (LangSearch has no
-  language filter of its own and returns pages in any language).
+  `.env`, gitignored) using the query strategy above. Merges results across
+  *every* query candidate (not just the first that returns anything),
+  de-duplicated by URL, up to `TARGET_EVIDENCE` (8) items or
+  `MAX_QUERIES_TRIED` (4) queries — issue #20: one query can be off-target,
+  so relying on only the first hit under-fed the classifier. Drops any
+  non-English result (LangSearch has no language filter of its own) and any
+  result that doesn't even mention the claim's primary concept
+  (`_looks_relevant`) before it can reach the classifier.
 - **`legacy/medical_retrieval.py`** (MedlinePlus) and **`legacy/retrieval.py`**
   (direct Wikipedia) — earlier evidence sources, **not currently used** by
   `verify.py` (see `PROGRESS.md` for why: LangSearch-only was chosen over
