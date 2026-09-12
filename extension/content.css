@@ -94,13 +94,13 @@
   color: #1f5238;
 }
 
-#factcheck-panel .factcheck-contradicted {
+#factcheck-panel .factcheck-misrepresented {
   background: #f7dede;
   border-color: #a13d3d;
   color: #7a2626;
 }
 
-#factcheck-panel .factcheck-insufficient_evidence {
+#factcheck-panel .factcheck-unsupported {
   background: #f1efe5;
   border-color: #9a8b4f;
   color: #6b5f30;
@@ -166,12 +166,12 @@ factcheck-mark.factcheck-highlight-supported {
   border-color: #2f6f4e;
 }
 
-factcheck-mark.factcheck-highlight-contradicted {
+factcheck-mark.factcheck-highlight-misrepresented {
   background: rgba(161, 61, 61, 0.22);
   border-color: #a13d3d;
 }
 
-factcheck-mark.factcheck-highlight-insufficient_evidence {
+factcheck-mark.factcheck-highlight-unsupported {
   background: rgba(154, 139, 79, 0.22);
   border-color: #9a8b4f;
 }
@@ -214,12 +214,12 @@ factcheck-mark.factcheck-highlight-insufficient_evidence {
   color: #1f5238;
 }
 
-#factcheck-tooltip .factcheck-contradicted {
+#factcheck-tooltip .factcheck-misrepresented {
   background: #f7dede;
   color: #7a2626;
 }
 
-#factcheck-tooltip .factcheck-insufficient_evidence {
+#factcheck-tooltip .factcheck-unsupported {
   background: #f1efe5;
   color: #6b5f30;
 }

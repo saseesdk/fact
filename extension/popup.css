@@ -127,8 +127,8 @@ button:disabled {
 }
 
 .verdict.supported { background: #dff2e4; border-color: #2f6f4e; color: #1f5238; }
-.verdict.contradicted { background: #f7dede; border-color: #a13d3d; color: #7a2626; }
-.verdict.insufficient_evidence { background: #f1efe5; border-color: #9a8b4f; color: #6b5f30; }
+.verdict.misrepresented { background: #f7dede; border-color: #a13d3d; color: #7a2626; }
+.verdict.unsupported { background: #f1efe5; border-color: #9a8b4f; color: #6b5f30; }
 
 .sources {
   display: block;

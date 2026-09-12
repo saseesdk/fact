@@ -181,13 +181,13 @@
   }
 
   .verdict.supported { background: #dff2e4; border-color: #2f6f4e; color: #1f5238; }
-  .verdict.contradicted { background: #f7dede; border-color: #a13d3d; color: #7a2626; }
-  .verdict.insufficient_evidence { background: #f1efe5; border-color: #9a8b4f; color: #6b5f30; }
+  .verdict.misrepresented { background: #f7dede; border-color: #a13d3d; color: #7a2626; }
+  .verdict.unsupported { background: #f1efe5; border-color: #9a8b4f; color: #6b5f30; }
 
   @media (prefers-color-scheme: dark) {
     .verdict.supported { background: #1f2f27; color: #7ecba1; }
-    .verdict.contradicted { background: #331f1f; color: #e08a8a; }
-    .verdict.insufficient_evidence { background: #2a2717; color: #d8c98a; }
+    .verdict.misrepresented { background: #331f1f; color: #e08a8a; }
+    .verdict.unsupported { background: #2a2717; color: #d8c98a; }
   }
 
   .verdict .sources {
@@ -295,7 +295,26 @@
       const explanation = document.createElement("span");
       explanation.textContent = result.explanation;
       box.append(label, explanation);
-      if (result.matched_sources && result.matched_sources.length) {
+      if (result.sources && result.sources.length) {
+        const sources = document.createElement("span");
+        sources.className = "sources";
+        sources.append("Source: ");
+        result.sources.forEach((s, i) => {
+          if (i > 0) sources.append(", ");
+          if (s.url) {
+            const a = document.createElement("a");
+            a.href = s.url;
+            a.target = "_blank";
+            a.rel = "noopener";
+            a.textContent = s.title;
+            sources.appendChild(a);
+          } else {
+            sources.append(s.title);
+          }
+        });
+        box.appendChild(sources);
+      } else if (result.matched_sources && result.matched_sources.length) {
+        // Older callers/fixtures without the richer `sources` field yet.
         const sources = document.createElement("span");
         sources.className = "sources";
         sources.textContent = "Source: " + result.matched_sources.join(", ");

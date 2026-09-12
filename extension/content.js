@@ -59,17 +59,43 @@ function setBody(html) {
 }
 
 function escapeHtml(text) {
-  const div = document.createElement("div");
-  div.textContent = text;
-  return div.innerHTML;
+  // Escapes quotes too (not just via the div.textContent/innerHTML trick,
+  // which leaves " and ' alone in a text node) because this is now also
+  // used inside href="..." attributes below — those come from third-party
+  // search results, so an unescaped quote there could break out of the
+  // attribute into the surrounding markup.
+  return String(text)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+// Renders a claim's source(s) as clickable links where a URL is available
+// (issue #18: "show the most relevant source found and along with their
+// links"), falling back to plain text for older result shapes or sources
+// with no URL. Only http(s) URLs are linked — a search result's "url"
+// field is third-party data, so this guards against something unexpected
+// like a javascript: URL ending up there.
+function renderSourcesHtml(r) {
+  if (r.sources && r.sources.length) {
+    return r.sources
+      .map((s) =>
+        s.url && /^https?:\/\//i.test(s.url)
+          ? `<a href="${escapeHtml(s.url)}" target="_blank" rel="noopener">${escapeHtml(s.title)}</a>`
+          : escapeHtml(s.title)
+      )
+      .join(", ");
+  }
+  return r.matched_sources?.length ? escapeHtml(r.matched_sources.join(", ")) : "";
 }
 
 function renderClaims(list) {
   return list
     .map((r) => {
-      const sources = r.matched_sources?.length
-        ? `<div class="factcheck-sources">Source: ${escapeHtml(r.matched_sources.join(", "))}</div>`
-        : "";
+      const sourcesHtml = renderSourcesHtml(r);
+      const sources = sourcesHtml ? `<div class="factcheck-sources">Source: ${sourcesHtml}</div>` : "";
       return `
         <div class="factcheck-claim">
           <div class="factcheck-claim-text">${escapeHtml(r.claim)}</div>
@@ -231,11 +257,11 @@ function ensureTooltip() {
 
 function showTooltip(target, item) {
   const el = ensureTooltip();
-  const source = item.matched_sources?.length ? item.matched_sources.join(", ") : "no single matching source";
+  const source = renderSourcesHtml(item) || "no single matching source";
   el.innerHTML = `
     <div class="factcheck-tooltip-verdict factcheck-${item.verdict}">${item.verdict.replace("_", " ")} (${item.confidence})</div>
     <div class="factcheck-tooltip-explanation">${escapeHtml(item.explanation)}</div>
-    <div class="factcheck-tooltip-source">Compared against: ${escapeHtml(source)}</div>
+    <div class="factcheck-tooltip-source">Compared against: ${source}</div>
   `;
   const rect = target.getBoundingClientRect();
   el.style.left = `${Math.max(8, rect.left)}px`;

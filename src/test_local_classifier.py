@@ -21,7 +21,7 @@ def main():
     results.append(check(
         "no evidence at all",
         classify("The sky is green.", []),
-        "insufficient_evidence",
+        "unsupported",
     ))
 
     results.append(check(
@@ -39,7 +39,7 @@ def main():
             "Type 1 diabetes can be cured by drinking more water.",
             [{"title": "Diabetes", "extract": "Type 1 diabetes cannot be cured. It is a lifelong condition managed with insulin."}],
         ),
-        "contradicted",
+        "misrepresented",
     ))
 
     results.append(check(
@@ -51,7 +51,7 @@ def main():
                 {"title": "Vaccine Safety", "extract": "There is no link between vaccines and autism. This has been extensively studied and disproven."},
             ],
         ),
-        "insufficient_evidence",
+        "unsupported",
     ))
 
     correct = sum(results)
