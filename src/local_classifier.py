@@ -208,15 +208,37 @@ def classify(claim, evidence, trace=None):
         reverse=True,
     )
 
-    # An item can never clear both thresholds at once (entailment +
-    # contradiction + neutral sum to 1, and both thresholds are 0.55), so
-    # these two lists never share an item - no risk of "supporting" and
-    # "contradicting" evidence secretly being the same source scored twice.
+    # Only the top MAX_CANDIDATES_PER_SIDE of each ranked list get a chance
+    # at the specifics gate, not the whole pool. Measured directly that
+    # walking arbitrarily deep backfires for claims that have no real
+    # evidence either way (opinions/predictions that slipped past
+    # claim_filter.py, e.g. "The stock market will crash in 2027",
+    # "Coffee is objectively better than tea"): with retrieval now
+    # returning a richer pool (issue #20), digging through enough
+    # candidates eventually turns up *something* that superficially
+    # mentions the right numbers/concepts and coincidentally passes the
+    # gate, producing a confident wrong verdict where "insufficient
+    # evidence" was correct — regression-tested directly (general suite
+    # dropped from an unmodified-dev same-day baseline of 8/16 to 7/16
+    # with unlimited depth). Limiting to the top 3 keeps the fix for the
+    # common case this change targets (the #1-ranked candidate fails the
+    # gate but #2 or #3 would pass) while bounding how far it can dig for
+    # a coincidental match on claims that shouldn't get a confident verdict
+    # at all.
+    MAX_CANDIDATES_PER_SIDE = 3
     entailment_winner = next(
-        (e for e in entailment_candidates if _addresses_claim_specifics(claim, e["extract"])), None
+        (
+            e for e in entailment_candidates[:MAX_CANDIDATES_PER_SIDE]
+            if _addresses_claim_specifics(claim, e["extract"])
+        ),
+        None,
     )
     contradiction_winner = next(
-        (e for e in contradiction_candidates if _addresses_claim_specifics(claim, e["extract"])), None
+        (
+            e for e in contradiction_candidates[:MAX_CANDIDATES_PER_SIDE]
+            if _addresses_claim_specifics(claim, e["extract"])
+        ),
+        None,
     )
 
     if entailment_winner and contradiction_winner and entailment_winner["key"] != contradiction_winner["key"]:
