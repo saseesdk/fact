@@ -57,6 +57,41 @@ Not addressed here: issue #21's second complaint in general (a non-claim
 getting a confident verdict) is a `claim_filter.py` fact/opinion-precision
 problem upstream of this file, not fully fixed by the depth cap above
 (which only bounds the symptom for claims that already reached this far).
+## 2026-09-12 — better-websearch-retrieval: multi-query merge + relevance gate (issue #20)
+
+Issue #20 complained LangSearch "retrieves irrelevant sources" and "doesn't
+retrieve enough relevant sources." Root cause confirmed directly:
+`retrieve_evidence()` stopped at the very first query candidate that
+returned *any* hits at all — the whole evidence pool for a claim could be
+just one query's results, and if that one query happened to be off-target,
+there was no second chance.
+
+Fix: merge results (de-duplicated by URL) across up to `MAX_QUERIES_TRIED`
+(4) query candidates instead of stopping at the first hit, up to
+`TARGET_EVIDENCE` (8) items, plus a cheap pre-filter (`_looks_relevant`)
+that drops any result not even mentioning the claim's primary concept
+before it reaches the NLI classifier.
+
+Confirmed directly this fixes the retrieval side of a known false-positive
+case: "Eating an apple a day guarantees you will never get sick" used to
+only ever retrieve one bad match (an "APPLE Definition & Meaning |
+Dictionary.com" dictionary entry). It now also retrieves several genuinely
+on-topic myth-debunking pages in the same pool ("Does an Apple a Day
+Really Keep the Doctor Away?", a Trivia Cafe myths page). The classifier
+still doesn't reliably pick the right one yet — that's a separate,
+decision-layer problem (issue #21) — but the evidence going in is now real
+instead of noise.
+
+**Measurement caveat, stated plainly:** a same-day fresh run of unmodified
+`dev` scored 8/16 (50%) on the general suite, and this branch alone also
+scored 8/16 — i.e. no net change on the aggregate pass rate in a single
+run. Given LangSearch is a live search API, single-run pass-rate deltas on
+this suite are dominated by day-to-day (sometimes run-to-run) search
+result variance, not by this change specifically — the same lesson this
+project already learned once with `MAX_PREMISE_CHARS` (see the 2026-09-06
+entry below). The apple-claim improvement above was confirmed by directly
+inspecting retrieved evidence, not by the aggregate score, which is the
+more reliable way to validate a retrieval-only change like this one.
 
 ## 2026-09-06 (later) — speed-up-nli-scoring: why one claim took ~2 minutes
 

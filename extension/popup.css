@@ -12,6 +12,13 @@ h1 {
   margin: 0 0 2px;
 }
 
+.tagline {
+  color: #2f6f4e;
+  font-size: 0.8rem;
+  font-weight: 600;
+  margin: 0 0 4px;
+}
+
 .subtitle {
   color: #63695f;
   font-size: 0.78rem;
@@ -58,6 +65,29 @@ button:disabled {
   font-size: 0.78rem;
 }
 
+.progress {
+  margin-top: 8px;
+}
+
+.progress-label {
+  font-size: 0.78rem;
+  color: #63695f;
+  margin-bottom: 4px;
+}
+
+.progress-track {
+  height: 6px;
+  border-radius: 3px;
+  background: #eceae2;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: #2f6f4e;
+  transition: width 0.2s ease;
+}
+
 #results {
   margin-top: 10px;
   max-height: 320px;
@@ -97,14 +127,26 @@ button:disabled {
 }
 
 .verdict.supported { background: #dff2e4; border-color: #2f6f4e; color: #1f5238; }
-.verdict.contradicted { background: #f7dede; border-color: #a13d3d; color: #7a2626; }
-.verdict.insufficient_evidence { background: #f1efe5; border-color: #9a8b4f; color: #6b5f30; }
+.verdict.misrepresented { background: #f7dede; border-color: #a13d3d; color: #7a2626; }
+.verdict.unsupported { background: #f1efe5; border-color: #9a8b4f; color: #6b5f30; }
 
 .sources {
   display: block;
   margin-top: 3px;
   font-size: 0.7rem;
   opacity: 0.85;
+}
+
+.how-to-use {
+  display: block;
+  margin-top: 10px;
+  font-size: 0.76rem;
+  color: #2f6f4e;
+  text-decoration: none;
+}
+
+.how-to-use:hover {
+  text-decoration: underline;
 }
 
 .empty, .error-text {

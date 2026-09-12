@@ -2,7 +2,8 @@
 
 This is the Phase 2 prototype from the master plan: no extension, no backend
 API, no database. Just prove out whether retrieval + NLI comparison can
-reliably classify a claim as supported / contradicted / insufficient_evidence.
+reliably classify a claim as supported / misrepresented / unsupported (a 4th
+category, outdated, is defined but not produced yet — see local_classifier.py).
 
 Fully local and free: classification runs on a small open-source NLI model
 (local_classifier.py) — no API key, no external LLM dependency, no per-call

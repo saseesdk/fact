@@ -6,12 +6,17 @@
 
 const API_BASE = "http://127.0.0.1:5000";
 
-chrome.runtime.onInstalled.addListener(() => {
+chrome.runtime.onInstalled.addListener((details) => {
   chrome.contextMenus.create({
     id: "verify-selection",
     title: 'Verify with Fact Check: "%s"',
     contexts: ["selection"],
   });
+  // Only on a fresh install, not every update/reload while developing —
+  // nobody wants a tab popping open every time the extension reloads.
+  if (details.reason === "install") {
+    chrome.tabs.create({ url: chrome.runtime.getURL("onboarding.html") });
+  }
 });
 
 // MV3 service workers get torn down by Chrome after ~30s of being
@@ -28,17 +33,38 @@ function withServiceWorkerKeepAlive(promise) {
   return promise.finally(() => clearInterval(heartbeat));
 }
 
-async function verifyText(text) {
-  const res = await fetch(`${API_BASE}/api/verify_text`, {
+async function fetchJSON(path, body) {
+  const res = await fetch(`${API_BASE}${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ text }),
+    body: JSON.stringify(body),
   });
   if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(body.error || `Server error (${res.status})`);
+    const errBody = await res.json().catch(() => ({}));
+    throw new Error(errBody.error || `Server error (${res.status})`);
   }
   return res.json();
+}
+
+// Verifies claim-by-claim (same two endpoints the web UI already uses:
+// /api/segregate then /api/verify per claim) instead of one opaque
+// /api/verify_text call, specifically so progress can be reported as each
+// claim finishes — a single one-shot call has no way to say "3 of 7 done"
+// partway through. onProgress is called once up front with the total (as
+// soon as segregation finishes) and once per claim after it resolves.
+async function verifyTextWithProgress(text, onProgress) {
+  const seg = await fetchJSON("/api/segregate", { text });
+  const claims = seg.claims.map((c) => c.sentence);
+  const skipped = seg.non_claims.map((c) => c.sentence);
+  const total = claims.length;
+  const verified = [];
+  onProgress({ done: 0, total, latest: null });
+  for (const claim of claims) {
+    const result = await fetchJSON("/api/verify", { claim });
+    verified.push(result);
+    onProgress({ done: verified.length, total, latest: result });
+  }
+  return { verified, skipped_non_factual: skipped };
 }
 
 // content.js is NOT declared in manifest.json's content_scripts anymore —
@@ -66,7 +92,11 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   await ensureContentScriptInjected(tab.id);
   chrome.tabs.sendMessage(tab.id, { type: "FACTCHECK_LOADING" });
   try {
-    const data = await withServiceWorkerKeepAlive(verifyText(info.selectionText));
+    const data = await withServiceWorkerKeepAlive(
+      verifyTextWithProgress(info.selectionText, (progress) =>
+        chrome.tabs.sendMessage(tab.id, { type: "FACTCHECK_PROGRESS", ...progress })
+      )
+    );
     chrome.tabs.sendMessage(tab.id, { type: "FACTCHECK_RESULT", data });
   } catch (err) {
     chrome.tabs.sendMessage(tab.id, {
@@ -80,7 +110,14 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
 // privileged fetch path, so it asks the background worker to do it too.
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.type !== "FACTCHECK_VERIFY_TEXT") return false;
-  withServiceWorkerKeepAlive(verifyText(message.text))
+  withServiceWorkerKeepAlive(
+    verifyTextWithProgress(message.text, (progress) =>
+      // Fire-and-forget broadcast to whichever popup is currently open. No
+      // listener (popup closed) just means this promise rejects; swallow
+      // it — the popup only cares about progress while it's visible.
+      chrome.runtime.sendMessage({ type: "FACTCHECK_PROGRESS", ...progress }).catch(() => {})
+    )
+  )
     .then((data) => sendResponse({ ok: true, data }))
     .catch((err) =>
       sendResponse({

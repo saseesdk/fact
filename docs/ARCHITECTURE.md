@@ -40,7 +40,8 @@ for each factual sentence:
    │    appear in the evidence, or is this just topical noise?)
    │
    ▼
-final verdict: supported / contradicted / insufficient_evidence
+final verdict: supported / misrepresented / unsupported
+   (a 4th category, outdated, is defined but not produced yet — see local_classifier.py)
    │
    ▼
 verify.py ties all of the above into one call: verify(claim)
@@ -58,11 +59,12 @@ app.py exposes it over HTTP for the web UI (src/page/index.html)
   `verify_text(text)` runs a whole paragraph: splits it, filters to
   checkable claims, calls `verify()` on each. Also runnable directly:
   `python src/verify.py "some claim"`.
-- **`src/app.py`** — Flask backend exposing `verify.py` over HTTP for the
-  web UI: `POST /api/segregate` (fact/opinion split only, fast),
-  `POST /api/verify` (one claim, full pipeline), `POST /api/verify_text`
-  (whole paragraph, used by the browser extension on other branches).
-  `GET /` serves the web UI page itself.
+- **`src/app.py`** — Flask backend exposing `verify.py` over HTTP:
+  `POST /api/segregate` (fact/opinion split only, fast), `POST /api/verify`
+  (one claim, full pipeline). Both the web UI and the browser extension call
+  segregate once then verify per claim — one call per claim is what lets the
+  extension show a live "checking claim 3 of 7" progress bar instead of one
+  opaque multi-minute wait. `GET /` serves the web UI page itself.
 
 ### Step 1 — sentence splitting + fact/opinion filter
 
@@ -98,9 +100,14 @@ app.py exposes it over HTTP for the web UI (src/page/index.html)
 
 - **`src/websearch_retrieval.py`** — the active evidence source. Calls
   LangSearch (a web search API, needs `LANGSEARCH_API_KEY` in a local
-  `.env`, gitignored) using the query strategy above, then drops any
-  non-English result before it can reach the classifier (LangSearch has no
-  language filter of its own and returns pages in any language).
+  `.env`, gitignored) using the query strategy above. Merges results across
+  *every* query candidate (not just the first that returns anything),
+  de-duplicated by URL, up to `TARGET_EVIDENCE` (8) items or
+  `MAX_QUERIES_TRIED` (4) queries — issue #20: one query can be off-target,
+  so relying on only the first hit under-fed the classifier. Drops any
+  non-English result (LangSearch has no language filter of its own) and any
+  result that doesn't even mention the claim's primary concept
+  (`_looks_relevant`) before it can reach the classifier.
 - **`legacy/medical_retrieval.py`** (MedlinePlus) and **`legacy/retrieval.py`**
   (direct Wikipedia) — earlier evidence sources, **not currently used** by
   `verify.py` (see `PROGRESS.md` for why: LangSearch-only was chosen over
@@ -118,7 +125,9 @@ app.py exposes it over HTTP for the web UI (src/page/index.html)
   numbers, its secondary concepts) — this is what stops a page that's
   merely *about the same topic* from being mistaken for real support or
   refutation. If two sources disagree, that conflict is surfaced as
-  `insufficient_evidence` rather than picked between.
+  `unsupported` rather than picked between. The "supported" and
+  "misrepresented" verdicts also return each matched source's URL
+  (`sources: [{title, url}]`), so a UI can link directly to it.
 
 ### Tests and fixtures
 

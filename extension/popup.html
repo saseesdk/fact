@@ -7,13 +7,19 @@
 </head>
 <body>
   <h1>Fact Check</h1>
-  <p class="subtitle">Paste text or select it on the page and right-click.</p>
+  <p class="tagline">Verify what you read, right where you read it — fully offline.</p>
+  <p class="subtitle">Paste text below, or select it on any page and right-click.</p>
   <textarea id="input" placeholder="Paste a sentence or paragraph to verify…"></textarea>
   <div class="actions">
     <button id="run">Verify</button>
     <span class="status" id="status"></span>
   </div>
+  <div class="progress" id="progress" hidden>
+    <div class="progress-label" id="progressLabel"></div>
+    <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
+  </div>
   <div id="results"></div>
+  <a class="how-to-use" href="onboarding.html" target="_blank" rel="noopener">How to use this extension →</a>
   <script src="popup.js"></script>
 </body>
 </html>

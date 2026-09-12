@@ -58,13 +58,13 @@ ever addressing the claim's specific assertion. `_addresses_claim_specifics()`
 now hard-requires the claim's own numbers (dosages, years, statistics) to
 appear in the evidence, and requires at least one term from a concept beyond
 the claim's primary one to be present, before accepting a "supported" or
-"contradicted" verdict — otherwise it downgrades to `insufficient_evidence`
+"misrepresented" verdict — otherwise it downgrades to `unsupported`
 with an explanation instead of reporting a confident false positive.
 
 **Known remaining gap:** MedlinePlus's consumer-health prose usually doesn't
 state precise numeric thresholds (e.g. "how many tablets is an overdose")
 even on the correct page, so dosage-specific safety claims correctly resolve
-to `insufficient_evidence` rather than a guess. Fixing this needs a
+to `unsupported` rather than a guess. Fixing this needs a
 structured drug-label source — **NIH DailyMed** (confirmed free, no key,
 reachable) has an "Overdosage" section with real thresholds; not yet wired
 in, pending a decision on scope (picking a canonical label out of ~4,800
@@ -83,12 +83,22 @@ domain, learned from historical accuracy — not a static hardcoded list.
 
 The deck promises six outcomes, not three. Close that gap.
 
-- Expand the verdict set to match the deck: supported / contradicted /
-  outdated / misrepresented (evidence exists but the claim distorts it) /
-  logical error / insufficient evidence.
+- **Shipped (issue #18):** the verdict set is now the 4 user-facing
+  categories from the issue — supported / unsupported / misrepresented /
+  outdated — instead of the original 3 (supported / contradicted /
+  insufficient_evidence). `contradicted` was renamed to `misrepresented`
+  and `insufficient_evidence` to `unsupported`; the "supported" verdict
+  now also returns each matched source's URL (`sources: [{title, url}]`),
+  not just its title, so the UI can link to it directly.
+- **Not shipped: `outdated`.** Nothing in this pipeline extracts or
+  compares dates yet, so there's no real signal to base an "outdated"
+  verdict on — `classify()` never produces it rather than guessing. Needs
+  actual date-aware reasoning (pull a claim's implied date, pull each
+  source's publish/effective date, compare) before this can be real. Also
+  still open: the deck's "logical error" category, and per-verdict
+  confidence calibration instead of one global threshold.
 - Add an embedding-similarity layer for ranking evidence candidates, separate
   from the NLI entailment step used for the final verdict.
-- Per-verdict confidence calibration instead of one global threshold.
 
 **Phase 2.x — transparency (partially shipped):** every verdict in the UI
 now has a "Show what happened behind the scenes" toggle exposing the actual

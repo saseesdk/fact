@@ -60,7 +60,7 @@ FACTUAL_LABEL = "fact"
 # opinion=0.185 — a near coin flip). A bare argmax would silently drop real
 # claims from verification entirely, which is worse than spending a wasted
 # verification cycle on a borderline statement (which just resolves to
-# insufficient_evidence downstream — a safe outcome, not a wrong one). So we
+# unsupported downstream — a safe outcome, not a wrong one). So we
 # fail OPEN: only exclude a sentence when opinion clearly beats fact.
 OPINION_MARGIN = 0.05
 

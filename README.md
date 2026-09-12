@@ -72,7 +72,7 @@ LANGSEARCH_API_KEY=your-key-here
 ```
 
 Without this, retrieval returns no evidence and every claim resolves to
-`insufficient_evidence`.
+`unsupported`.
 
 ## Usage
 
@@ -135,5 +135,5 @@ docs/
   site's name without actually being that site, and nothing currently
   catches this (see `docs/PROGRESS.md`).
 - No structured drug-dosage source — precise numeric dosage-safety claims
-  correctly resolve to `insufficient_evidence` rather than a guess, since
+  correctly resolve to `unsupported` rather than a guess, since
   general web prose rarely states exact thresholds.
