@@ -1,0 +1,7 @@
+# Requires review from one of these two on any PR touching the matching
+# files (see issue #24). This file alone doesn't enforce anything - GitHub
+# only applies it once branch protection on the target branch has "Require
+# review from Code Owners" turned on (Settings -> Branches -> the branch's
+# rule). That toggle needs repo admin access to change, so it isn't done
+# by this PR - see the issue for the exact steps.
+* @saseesdk @Manoj632004
