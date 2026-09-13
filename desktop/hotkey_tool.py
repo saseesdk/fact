@@ -63,6 +63,16 @@ DEFAULT_STYLE = {"bg": "#eceae2", "border": "#63695f", "fg": "#1c2321"}
 # directly from the hotkey thread.
 event_queue = queue.Queue()
 
+# `keyboard`'s trigger_on_release for a multi-key combo can fire its
+# callback more than once for a single physical press+release (confirmed
+# directly: one Ctrl+Alt+F triggered on_hotkey twice, and the second,
+# overlapping call queued a "loading" event that raced with the first
+# call's in-flight "progress" events, updating a popup window the second
+# call had already replaced — the destroyed-widget crash seen in testing).
+# A simple non-blocking lock makes overlapping triggers a no-op instead of
+# two verify runs stepping on each other's popup.
+_busy = threading.Lock()
+
 
 def grab_selected_text():
     """Simulate Ctrl+C to copy whatever is currently selected in the
@@ -129,21 +139,26 @@ def verify_text(text, on_progress=None):
 
 
 def on_hotkey():
-    event_queue.put(("loading", None))
-    text = grab_selected_text()
-    if not text.strip():
-        event_queue.put(("error", "Nothing was selected (or copying it failed)."))
-        return
+    if not _busy.acquire(blocking=False):
+        return  # a check is already in flight - ignore the duplicate/extra trigger
     try:
-        results, skipped = verify_text(
-            text, on_progress=lambda done, total: event_queue.put(("progress", (done, total)))
-        )
-        event_queue.put(("result", (results, skipped)))
-    except requests.exceptions.RequestException:
-        event_queue.put((
-            "error",
-            "Could not reach the local Fact Check server.\nIs `python src\\app.py` running?",
-        ))
+        event_queue.put(("loading", None))
+        text = grab_selected_text()
+        if not text.strip():
+            event_queue.put(("error", "Nothing was selected (or copying it failed)."))
+            return
+        try:
+            results, skipped = verify_text(
+                text, on_progress=lambda done, total: event_queue.put(("progress", (done, total)))
+            )
+            event_queue.put(("result", (results, skipped)))
+        except requests.exceptions.RequestException:
+            event_queue.put((
+                "error",
+                "Could not reach the local Fact Check server.\nIs `python src\\app.py` running?",
+            ))
+    finally:
+        _busy.release()
 
 
 # ---- Tkinter popup (built fresh each time, no window left behind) --------
@@ -153,8 +168,17 @@ class ResultPopup:
         self.root = root
         self.window = None
 
+    def _window_exists(self):
+        # self.window can go stale two ways: the user clicked the popup's
+        # own close button, or an error popup auto-destroyed itself after
+        # its timeout (see show_error) - either way winfo_exists() is the
+        # only reliable way to tell "this Tcl widget still exists" from
+        # Python, since the Python object itself doesn't get cleared just
+        # because the underlying window was destroyed.
+        return self.window is not None and self.window.winfo_exists()
+
     def _new_window(self):
-        if self.window is not None:
+        if self._window_exists():
             self.window.destroy()
         win = tk.Toplevel(self.root)
         win.title("Fact Check")
@@ -172,8 +196,11 @@ class ResultPopup:
         ).pack()
 
     def show_progress(self, done, total):
-        if self.window is None:
-            return
+        # A progress update can arrive after the user already closed the
+        # popup (or after a prior run's error popup auto-closed) - rather
+        # than crash on a destroyed widget, just open a fresh one.
+        if not self._window_exists():
+            self._new_window()
         for child in self.window.winfo_children():
             child.destroy()
         label = "No checkable claims found yet…" if total == 0 else (
