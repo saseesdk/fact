@@ -46,13 +46,19 @@ HOTKEY = "ctrl+alt+f"
 # tracebacks and print() output aren't always visible/flushed the same way
 # in every terminal - a log file next to the script is a reliable place to
 # look when "nothing seems to happen" needs diagnosing.
+#
+# Deliberately NOT logging.basicConfig(level=logging.DEBUG) - that sets the
+# ROOT logger's level, so every third-party library that also uses the
+# standard logging module (confirmed directly: Pillow's plugin-loading
+# code) starts writing its own DEBUG spam into this file too. Configure
+# only our own named logger instead, and leave the root logger alone.
 LOG_PATH = Path(__file__).parent / "hotkey_tool.log"
-logging.basicConfig(
-    filename=LOG_PATH,
-    level=logging.DEBUG,
-    format="%(asctime)s %(levelname)s %(threadName)s %(message)s",
-)
 log = logging.getLogger("hotkey_tool")
+log.setLevel(logging.DEBUG)
+log.propagate = False
+_handler = logging.FileHandler(LOG_PATH, encoding="utf-8")
+_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(threadName)s %(message)s"))
+log.addHandler(_handler)
 
 # How long to wait after simulating Ctrl+C before reading the clipboard.
 # Ctrl+C isn't instant — the target application needs a moment to actually
