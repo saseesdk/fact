@@ -70,14 +70,32 @@ def grab_selected_text():
     restore whatever was on the clipboard before. This is the only
     OS-agnostic way to reach "the current selection" outside a browser —
     there is no universal "get selected text" API across every Windows
-    application, but Ctrl+C is honored almost universally."""
+    application, but Ctrl+C is honored almost universally.
+
+    Confirmed directly this needs the hotkey to fire on key RELEASE, not
+    press (see add_hotkey(..., trigger_on_release=True) below): if the
+    callback runs while Ctrl+Alt+F is still physically held down, sending
+    a synthetic "ctrl+c" lands on top of the still-held real Alt key, so
+    the target application actually receives Ctrl+Alt+C - not a copy
+    shortcut in almost anything - and nothing gets copied at all. Waiting
+    for release means the physical keys are already up by the time this
+    runs, so the synthetic Ctrl+C is clean.
+
+    Also polls the clipboard for a short window instead of reading once
+    after a fixed delay: some applications take longer than others to
+    actually populate the clipboard after receiving Ctrl+C."""
     try:
         previous = pyperclip.paste()
     except Exception:
-        previous = None
+        previous = ""
     keyboard.send("ctrl+c")
-    time.sleep(CLIPBOARD_GRAB_DELAY)
-    text = pyperclip.paste()
+    text = previous
+    deadline = time.time() + 1.0
+    while time.time() < deadline:
+        time.sleep(CLIPBOARD_GRAB_DELAY)
+        text = pyperclip.paste()
+        if text != previous:
+            break
     try:
         pyperclip.copy(previous or "")
     except Exception:
@@ -286,7 +304,9 @@ def main():
     popup = ResultPopup(root)
     root.after(100, poll_queue, root, popup)
 
-    keyboard.add_hotkey(HOTKEY, on_hotkey)
+    # trigger_on_release=True: see grab_selected_text()'s docstring for why
+    # firing on press (the default) breaks the Ctrl+C simulation.
+    keyboard.add_hotkey(HOTKEY, on_hotkey, trigger_on_release=True)
 
     tray_thread = threading.Thread(target=run_tray, args=(root,), daemon=True)
     tray_thread.start()
