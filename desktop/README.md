@@ -32,7 +32,7 @@ door into the same pipeline.
 ## Usage
 
 Select text in **any** application — Word, Notepad, a PDF viewer, a
-browser, an email — then press **F9**. A small popup appears in
+browser, an email — then press **Ctrl+Alt+F**. A small popup appears in
 the top-right of the screen: a "checking claim N of total" progress
 message while it works, then each claim's verdict (color-coded, same
 categories as the extension: supported / misrepresented / unsupported),

@@ -20,17 +20,15 @@ Requires the backend already running:
 
 Usage: run this script (or the packaged .exe — see README.md). It sits
 quietly in the system tray. Select text in any application — Word,
-Notepad, a PDF reader, a browser, anywhere — press the hotkey (default F9),
-and a small popup near the corner of the screen shows the verdict for each
-checkable claim found in the selection.
+Notepad, a PDF reader, a browser, anywhere — press the hotkey (default
+Ctrl+Alt+F), and a small popup near the corner of the screen shows the
+verdict for each checkable claim found in the selection.
 """
 
-import logging
 import queue
 import threading
 import time
 import tkinter as tk
-from pathlib import Path
 from tkinter import font as tkfont
 
 import keyboard
@@ -40,32 +38,7 @@ import requests
 from PIL import Image, ImageDraw
 
 API_BASE = "http://127.0.0.1:5000"
-# A bare function key, not a multi-modifier combo (was ctrl+alt+f) - a
-# 3-key combo is the least reliable case for keyboard's global hook, and
-# on top of that our own synthetic Ctrl+C would land on top of whichever
-# modifiers were still physically held when the hook fired. A single key
-# has neither problem: nothing to release-order-race on the hook side, and
-# no modifier to collide with the Ctrl+C we send afterward. F9 is rarely
-# bound to anything in Word/Notepad/PDF readers.
-HOTKEY = "f9"
-
-# Writing to a file (not just the console) because thread-exception
-# tracebacks and print() output aren't always visible/flushed the same way
-# in every terminal - a log file next to the script is a reliable place to
-# look when "nothing seems to happen" needs diagnosing.
-#
-# Deliberately NOT logging.basicConfig(level=logging.DEBUG) - that sets the
-# ROOT logger's level, so every third-party library that also uses the
-# standard logging module (confirmed directly: Pillow's plugin-loading
-# code) starts writing its own DEBUG spam into this file too. Configure
-# only our own named logger instead, and leave the root logger alone.
-LOG_PATH = Path(__file__).parent / "hotkey_tool.log"
-log = logging.getLogger("hotkey_tool")
-log.setLevel(logging.DEBUG)
-log.propagate = False
-_handler = logging.FileHandler(LOG_PATH, encoding="utf-8")
-_handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(threadName)s %(message)s"))
-log.addHandler(_handler)
+HOTKEY = "ctrl+alt+f"
 
 # How long to wait after simulating Ctrl+C before reading the clipboard.
 # Ctrl+C isn't instant — the target application needs a moment to actually
@@ -90,14 +63,6 @@ DEFAULT_STYLE = {"bg": "#eceae2", "border": "#63695f", "fg": "#1c2321"}
 # directly from the hotkey thread.
 event_queue = queue.Queue()
 
-# keyboard's trigger_on_release fired on_hotkey twice for a single
-# physical press+release when the hotkey was still a multi-key combo
-# (confirmed directly, before switching to the single-key F9 below) - kept
-# as a defensive guard regardless, since a non-blocking lock making an
-# overlapping trigger a no-op is cheap insurance against two verify runs
-# stepping on each other's popup.
-_busy = threading.Lock()
-
 
 def grab_selected_text():
     """Simulate Ctrl+C to copy whatever is currently selected in the
@@ -105,37 +70,18 @@ def grab_selected_text():
     restore whatever was on the clipboard before. This is the only
     OS-agnostic way to reach "the current selection" outside a browser —
     there is no universal "get selected text" API across every Windows
-    application, but Ctrl+C is honored almost universally.
-
-    HOTKEY is a bare key (F9), not a Ctrl/Alt/Shift combo, specifically so
-    there's no modifier still physically held when this runs to collide
-    with the synthetic Ctrl+C below - an earlier Ctrl+Alt+F version of this
-    hotkey had exactly that problem (a still-held Alt turned the intended
-    Ctrl+C into Ctrl+Alt+C, which almost nothing responds to, so nothing
-    ever got copied).
-
-    Also polls the clipboard for a short window instead of reading once
-    after a fixed delay: some applications take longer than others to
-    actually populate the clipboard after receiving Ctrl+C."""
+    application, but Ctrl+C is honored almost universally."""
     try:
         previous = pyperclip.paste()
     except Exception:
-        log.exception("pyperclip.paste() failed reading the previous clipboard")
-        previous = ""
-    log.debug("sending synthetic ctrl+c")
+        previous = None
     keyboard.send("ctrl+c")
-    text = previous
-    deadline = time.time() + 1.0
-    while time.time() < deadline:
-        time.sleep(CLIPBOARD_GRAB_DELAY)
-        text = pyperclip.paste()
-        if text != previous:
-            break
-    log.debug("clipboard after ctrl+c: %r (changed=%s)", text, text != previous)
+    time.sleep(CLIPBOARD_GRAB_DELAY)
+    text = pyperclip.paste()
     try:
         pyperclip.copy(previous or "")
     except Exception:
-        log.exception("pyperclip.copy() failed restoring the previous clipboard")
+        pass
     return text
 
 
@@ -165,37 +111,21 @@ def verify_text(text, on_progress=None):
 
 
 def on_hotkey():
-    log.debug("on_hotkey triggered")
-    if not _busy.acquire(blocking=False):
-        log.debug("on_hotkey ignored - a check is already in flight")
-        return  # a check is already in flight - ignore the duplicate/extra trigger
+    event_queue.put(("loading", None))
+    text = grab_selected_text()
+    if not text.strip():
+        event_queue.put(("error", "Nothing was selected (or copying it failed)."))
+        return
     try:
-        event_queue.put(("loading", None))
-        text = grab_selected_text()
-        if not text.strip():
-            log.debug("no text captured - reporting error to the popup")
-            event_queue.put(("error", "Nothing was selected (or copying it failed)."))
-            return
-        try:
-            results, skipped = verify_text(
-                text, on_progress=lambda done, total: event_queue.put(("progress", (done, total)))
-            )
-            event_queue.put(("result", (results, skipped)))
-        except requests.exceptions.RequestException:
-            log.exception("verify_text failed to reach the backend")
-            event_queue.put((
-                "error",
-                "Could not reach the local Fact Check server.\nIs `python src\\app.py` running?",
-            ))
-    except Exception:
-        # Belt-and-suspenders: an uncaught exception here would otherwise
-        # just print to stderr from keyboard's/pystray's own worker thread
-        # and never reach the popup at all - log it explicitly so "nothing
-        # happened" always leaves a trace somewhere.
-        log.exception("on_hotkey crashed unexpectedly")
-        event_queue.put(("error", "Something went wrong - check desktop/hotkey_tool.log for details."))
-    finally:
-        _busy.release()
+        results, skipped = verify_text(
+            text, on_progress=lambda done, total: event_queue.put(("progress", (done, total)))
+        )
+        event_queue.put(("result", (results, skipped)))
+    except requests.exceptions.RequestException:
+        event_queue.put((
+            "error",
+            "Could not reach the local Fact Check server.\nIs `python src\\app.py` running?",
+        ))
 
 
 # ---- Tkinter popup (built fresh each time, no window left behind) --------
@@ -205,17 +135,8 @@ class ResultPopup:
         self.root = root
         self.window = None
 
-    def _window_exists(self):
-        # self.window can go stale two ways: the user clicked the popup's
-        # own close button, or an error popup auto-destroyed itself after
-        # its timeout (see show_error) - either way winfo_exists() is the
-        # only reliable way to tell "this Tcl widget still exists" from
-        # Python, since the Python object itself doesn't get cleared just
-        # because the underlying window was destroyed.
-        return self.window is not None and self.window.winfo_exists()
-
     def _new_window(self):
-        if self._window_exists():
+        if self.window is not None:
             self.window.destroy()
         win = tk.Toplevel(self.root)
         win.title("Fact Check")
@@ -233,11 +154,8 @@ class ResultPopup:
         ).pack()
 
     def show_progress(self, done, total):
-        # A progress update can arrive after the user already closed the
-        # popup (or after a prior run's error popup auto-closed) - rather
-        # than crash on a destroyed widget, just open a fresh one.
-        if not self._window_exists():
-            self._new_window()
+        if self.window is None:
+            return
         for child in self.window.winfo_children():
             child.destroy()
         label = "No checkable claims found yet…" if total == 0 else (
@@ -318,18 +236,14 @@ def poll_queue(root, popup):
     try:
         while True:
             action, payload = event_queue.get_nowait()
-            log.debug("poll_queue dispatching action=%s", action)
-            try:
-                if action == "loading":
-                    popup.show_loading()
-                elif action == "progress":
-                    popup.show_progress(*payload)
-                elif action == "result":
-                    popup.show_result(*payload)
-                elif action == "error":
-                    popup.show_error(payload)
-            except Exception:
-                log.exception("poll_queue failed handling action=%s", action)
+            if action == "loading":
+                popup.show_loading()
+            elif action == "progress":
+                popup.show_progress(*payload)
+            elif action == "result":
+                popup.show_result(*payload)
+            elif action == "error":
+                popup.show_error(payload)
     except queue.Empty:
         pass
     root.after(100, poll_queue, root, popup)
@@ -347,7 +261,6 @@ def _make_tray_image():
 
 def run_tray(root):
     def on_check_now(icon, item):
-        log.debug("tray menu 'Check clipboard/selection now' clicked")
         threading.Thread(target=on_hotkey, daemon=True).start()
 
     def on_quit(icon, item):
@@ -367,7 +280,6 @@ def run_tray(root):
 
 
 def main():
-    log.debug("=== starting up ===")
     root = tk.Tk()
     root.withdraw()  # no main window — tray icon + on-demand popups only
 
@@ -380,9 +292,7 @@ def main():
     tray_thread.start()
 
     print(f"Fact Check hotkey tool running. Press {HOTKEY} after selecting text anywhere.")
-    print(f"Debug log: {LOG_PATH}")
     root.mainloop()
-    log.debug("=== mainloop exited ===")
 
 
 if __name__ == "__main__":
