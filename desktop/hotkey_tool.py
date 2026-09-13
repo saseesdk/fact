@@ -20,9 +20,9 @@ Requires the backend already running:
 
 Usage: run this script (or the packaged .exe — see README.md). It sits
 quietly in the system tray. Select text in any application — Word,
-Notepad, a PDF reader, a browser, anywhere — press the hotkey (default
-Ctrl+Alt+F), and a small popup near the corner of the screen shows the
-verdict for each checkable claim found in the selection.
+Notepad, a PDF reader, a browser, anywhere — press the hotkey (default F9),
+and a small popup near the corner of the screen shows the verdict for each
+checkable claim found in the selection.
 """
 
 import logging
@@ -40,7 +40,14 @@ import requests
 from PIL import Image, ImageDraw
 
 API_BASE = "http://127.0.0.1:5000"
-HOTKEY = "ctrl+alt+f"
+# A bare function key, not a multi-modifier combo (was ctrl+alt+f) - a
+# 3-key combo is the least reliable case for keyboard's global hook, and
+# on top of that our own synthetic Ctrl+C would land on top of whichever
+# modifiers were still physically held when the hook fired. A single key
+# has neither problem: nothing to release-order-race on the hook side, and
+# no modifier to collide with the Ctrl+C we send afterward. F9 is rarely
+# bound to anything in Word/Notepad/PDF readers.
+HOTKEY = "f9"
 
 # Writing to a file (not just the console) because thread-exception
 # tracebacks and print() output aren't always visible/flushed the same way
@@ -83,14 +90,12 @@ DEFAULT_STYLE = {"bg": "#eceae2", "border": "#63695f", "fg": "#1c2321"}
 # directly from the hotkey thread.
 event_queue = queue.Queue()
 
-# `keyboard`'s trigger_on_release for a multi-key combo can fire its
-# callback more than once for a single physical press+release (confirmed
-# directly: one Ctrl+Alt+F triggered on_hotkey twice, and the second,
-# overlapping call queued a "loading" event that raced with the first
-# call's in-flight "progress" events, updating a popup window the second
-# call had already replaced — the destroyed-widget crash seen in testing).
-# A simple non-blocking lock makes overlapping triggers a no-op instead of
-# two verify runs stepping on each other's popup.
+# keyboard's trigger_on_release fired on_hotkey twice for a single
+# physical press+release when the hotkey was still a multi-key combo
+# (confirmed directly, before switching to the single-key F9 below) - kept
+# as a defensive guard regardless, since a non-blocking lock making an
+# overlapping trigger a no-op is cheap insurance against two verify runs
+# stepping on each other's popup.
 _busy = threading.Lock()
 
 
@@ -102,14 +107,12 @@ def grab_selected_text():
     there is no universal "get selected text" API across every Windows
     application, but Ctrl+C is honored almost universally.
 
-    Confirmed directly this needs the hotkey to fire on key RELEASE, not
-    press (see add_hotkey(..., trigger_on_release=True) below): if the
-    callback runs while Ctrl+Alt+F is still physically held down, sending
-    a synthetic "ctrl+c" lands on top of the still-held real Alt key, so
-    the target application actually receives Ctrl+Alt+C - not a copy
-    shortcut in almost anything - and nothing gets copied at all. Waiting
-    for release means the physical keys are already up by the time this
-    runs, so the synthetic Ctrl+C is clean.
+    HOTKEY is a bare key (F9), not a Ctrl/Alt/Shift combo, specifically so
+    there's no modifier still physically held when this runs to collide
+    with the synthetic Ctrl+C below - an earlier Ctrl+Alt+F version of this
+    hotkey had exactly that problem (a still-held Alt turned the intended
+    Ctrl+C into Ctrl+Alt+C, which almost nothing responds to, so nothing
+    ever got copied).
 
     Also polls the clipboard for a short window instead of reading once
     after a fixed delay: some applications take longer than others to
@@ -371,9 +374,7 @@ def main():
     popup = ResultPopup(root)
     root.after(100, poll_queue, root, popup)
 
-    # trigger_on_release=True: see grab_selected_text()'s docstring for why
-    # firing on press (the default) breaks the Ctrl+C simulation.
-    keyboard.add_hotkey(HOTKEY, on_hotkey, trigger_on_release=True)
+    keyboard.add_hotkey(HOTKEY, on_hotkey)
 
     tray_thread = threading.Thread(target=run_tray, args=(root,), daemon=True)
     tray_thread.start()
