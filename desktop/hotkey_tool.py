@@ -25,10 +25,12 @@ Ctrl+Alt+F), and a small popup near the corner of the screen shows the
 verdict for each checkable claim found in the selection.
 """
 
+import logging
 import queue
 import threading
 import time
 import tkinter as tk
+from pathlib import Path
 from tkinter import font as tkfont
 
 import keyboard
@@ -39,6 +41,18 @@ from PIL import Image, ImageDraw
 
 API_BASE = "http://127.0.0.1:5000"
 HOTKEY = "ctrl+alt+f"
+
+# Writing to a file (not just the console) because thread-exception
+# tracebacks and print() output aren't always visible/flushed the same way
+# in every terminal - a log file next to the script is a reliable place to
+# look when "nothing seems to happen" needs diagnosing.
+LOG_PATH = Path(__file__).parent / "hotkey_tool.log"
+logging.basicConfig(
+    filename=LOG_PATH,
+    level=logging.DEBUG,
+    format="%(asctime)s %(levelname)s %(threadName)s %(message)s",
+)
+log = logging.getLogger("hotkey_tool")
 
 # How long to wait after simulating Ctrl+C before reading the clipboard.
 # Ctrl+C isn't instant — the target application needs a moment to actually
@@ -97,7 +111,9 @@ def grab_selected_text():
     try:
         previous = pyperclip.paste()
     except Exception:
+        log.exception("pyperclip.paste() failed reading the previous clipboard")
         previous = ""
+    log.debug("sending synthetic ctrl+c")
     keyboard.send("ctrl+c")
     text = previous
     deadline = time.time() + 1.0
@@ -106,10 +122,11 @@ def grab_selected_text():
         text = pyperclip.paste()
         if text != previous:
             break
+    log.debug("clipboard after ctrl+c: %r (changed=%s)", text, text != previous)
     try:
         pyperclip.copy(previous or "")
     except Exception:
-        pass
+        log.exception("pyperclip.copy() failed restoring the previous clipboard")
     return text
 
 
@@ -139,12 +156,15 @@ def verify_text(text, on_progress=None):
 
 
 def on_hotkey():
+    log.debug("on_hotkey triggered")
     if not _busy.acquire(blocking=False):
+        log.debug("on_hotkey ignored - a check is already in flight")
         return  # a check is already in flight - ignore the duplicate/extra trigger
     try:
         event_queue.put(("loading", None))
         text = grab_selected_text()
         if not text.strip():
+            log.debug("no text captured - reporting error to the popup")
             event_queue.put(("error", "Nothing was selected (or copying it failed)."))
             return
         try:
@@ -153,10 +173,18 @@ def on_hotkey():
             )
             event_queue.put(("result", (results, skipped)))
         except requests.exceptions.RequestException:
+            log.exception("verify_text failed to reach the backend")
             event_queue.put((
                 "error",
                 "Could not reach the local Fact Check server.\nIs `python src\\app.py` running?",
             ))
+    except Exception:
+        # Belt-and-suspenders: an uncaught exception here would otherwise
+        # just print to stderr from keyboard's/pystray's own worker thread
+        # and never reach the popup at all - log it explicitly so "nothing
+        # happened" always leaves a trace somewhere.
+        log.exception("on_hotkey crashed unexpectedly")
+        event_queue.put(("error", "Something went wrong - check desktop/hotkey_tool.log for details."))
     finally:
         _busy.release()
 
@@ -281,14 +309,18 @@ def poll_queue(root, popup):
     try:
         while True:
             action, payload = event_queue.get_nowait()
-            if action == "loading":
-                popup.show_loading()
-            elif action == "progress":
-                popup.show_progress(*payload)
-            elif action == "result":
-                popup.show_result(*payload)
-            elif action == "error":
-                popup.show_error(payload)
+            log.debug("poll_queue dispatching action=%s", action)
+            try:
+                if action == "loading":
+                    popup.show_loading()
+                elif action == "progress":
+                    popup.show_progress(*payload)
+                elif action == "result":
+                    popup.show_result(*payload)
+                elif action == "error":
+                    popup.show_error(payload)
+            except Exception:
+                log.exception("poll_queue failed handling action=%s", action)
     except queue.Empty:
         pass
     root.after(100, poll_queue, root, popup)
@@ -306,6 +338,7 @@ def _make_tray_image():
 
 def run_tray(root):
     def on_check_now(icon, item):
+        log.debug("tray menu 'Check clipboard/selection now' clicked")
         threading.Thread(target=on_hotkey, daemon=True).start()
 
     def on_quit(icon, item):
@@ -325,6 +358,7 @@ def run_tray(root):
 
 
 def main():
+    log.debug("=== starting up ===")
     root = tk.Tk()
     root.withdraw()  # no main window — tray icon + on-demand popups only
 
@@ -339,7 +373,9 @@ def main():
     tray_thread.start()
 
     print(f"Fact Check hotkey tool running. Press {HOTKEY} after selecting text anywhere.")
+    print(f"Debug log: {LOG_PATH}")
     root.mainloop()
+    log.debug("=== mainloop exited ===")
 
 
 if __name__ == "__main__":

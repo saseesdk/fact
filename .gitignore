@@ -7,3 +7,4 @@ venv/
 desktop/build/
 desktop/dist/
 desktop/*.spec
+desktop/hotkey_tool.log
