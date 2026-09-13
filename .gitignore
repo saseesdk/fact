@@ -4,3 +4,7 @@ src/json/test_results.json
 prototype/server.log
 .env
 venv/
+desktop/build/
+desktop/dist/
+desktop/*.spec
+desktop/hotkey_tool.log

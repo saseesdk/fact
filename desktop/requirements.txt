@@ -1,0 +1,10 @@
+# Deliberately separate from the repo root's requirements.txt (which has
+# torch/transformers/spacy — heavy NLI/retrieval deps this tool never
+# needs, since it only talks to src/app.py over HTTP). Keep this file
+# light so the tool stays quick to install and easy to package.
+keyboard==0.13.5
+pyperclip==1.9.0
+pystray==0.19.5
+Pillow==10.4.0
+requests==2.32.3
+pyinstaller==6.10.0
