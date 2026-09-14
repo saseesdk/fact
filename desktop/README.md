@@ -1,86 +1,49 @@
-# Fact Check — desktop hotkey tool (issue #19)
+# Desktop hotkey tool
 
-A standalone background utility so fact-checking works **outside the
-browser too** — Word, Notepad, a PDF reader, email, anywhere you can
-select text. The Chrome extension can't do this itself: extension APIs
-only ever see inside the browser, there's no way for one to reach into
-another application's window. This is a second, separate program that
-can, sharing the exact same backend (`src/app.py`) the extension and web
-UI already use — no duplicated verification logic, just a third front
-door into the same pipeline.
+Fact-checks whatever text you have selected in *any* Windows application
+(Notepad, Word, a PDF reader, etc.) - not just the browser. Issue #19.
 
 ## Setup
 
-1. Start the backend first (same as for the extension/web UI):
-   ```
-   cd D:\PROGRAMMING\fact
-   venv\Scripts\python src\app.py
-   ```
-2. Install this tool's own (much lighter) dependencies — separate venv
-   recommended, since this never needs torch/transformers/spacy:
-   ```
-   cd desktop
-   python -m venv venv
-   venv\Scripts\pip install -r requirements.txt
-   ```
-3. Run it:
-   ```
-   venv\Scripts\python hotkey_tool.py
-   ```
-   A tray icon appears (bottom-right, near the clock). Leave it running.
-
-## Usage
-
-Select text in **any** application — Word, Notepad, a PDF viewer, a
-browser, an email — then press **Ctrl+Alt+F**. A small popup appears in
-the top-right of the screen: a "checking claim N of total" progress
-message while it works, then each claim's verdict (color-coded, same
-categories as the extension: supported / misrepresented / unsupported),
-with its source where one was found.
-
-If the hotkey doesn't fire for some reason, right-click the tray icon and
-choose "Check clipboard/selection now" as a fallback.
-
-## How it works
-
-There's no Windows API for "get whatever text is currently selected in
-any application" — but there is a universal one almost every app honors:
-Ctrl+C. On hotkey press, `grab_selected_text()` simulates Ctrl+C, waits
-briefly, reads the clipboard, and restores whatever was on the clipboard
-before (so this doesn't clobber something you'd already copied). That
-text goes through the same two calls the browser extension makes —
-`POST /api/segregate` then `POST /api/verify` per claim — reported via a
-Tk popup built fresh each time, driven off `on_hotkey()`'s callback (which
-`keyboard` runs on its own worker thread per hotkey press, so it can
-safely block on the network calls) instead of Tkinter's own main thread
-directly — a Tkinter window may only ever be touched from the thread
-running its own `mainloop()`, so cross-thread communication goes through a
-plain `queue.Queue`, drained by a repeating `root.after(...)` poll.
-
-## Packaging as a single .exe
-
-So people can just download and run one file, with no Python install of
-their own:
-
 ```
-venv\Scripts\pyinstaller --onefile --windowed --name "FactCheckHotkey" hotkey_tool.py
+cd desktop
+python -m venv venv
+venv\Scripts\pip install -r requirements.txt
 ```
 
-The `.exe` lands in `desktop/dist/`. `--windowed` suppresses the console
-window (the tray icon is the only visible UI). Note the packaged `.exe`
-still needs the backend (`src/app.py`) reachable at `127.0.0.1:5000` —
-it's a front end, not a bundled copy of the NLI models.
+## Run
 
-## Known limitations
+1. Start the backend from the repo root: `venv\Scripts\python src\app.py`
+2. In another terminal: `cd desktop && venv\Scripts\python hotkey_tool.py`
+3. Select text anywhere, press **Shift+F9**.
 
-- **Windows only** — `keyboard`'s global hotkey hook and the Ctrl+C
-  simulation are Windows-specific in how they're used here (this whole
-  repo targets Windows so far; see the root `README.md`).
-- **Won't intercept keys in an elevated (Run as Administrator) window**
-  unless this tool is also run elevated — a non-admin keyboard hook can't
-  reach into an admin-elevated process. Uncommon for normal Word/Notepad/
-  PDF-reader usage, but worth knowing.
-- Same backend-must-be-running requirement as the extension — this talks
-  to `127.0.0.1:5000`, nothing hosted/deployed.
-- No settings UI yet for changing the hotkey — it's the `HOTKEY` constant
-  at the top of `hotkey_tool.py`.
+Only one instance runs at a time (a second launch exits immediately) and a
+tray icon (green "F") is available to quit.
+
+## What happens on Shift+F9
+
+1. A toast slides in from the bottom-right corner **immediately**, showing
+   "Checking selected text..." - this is unconditional, it happens before
+   the clipboard is even read.
+2. The selected text is grabbed (via a simulated Ctrl+C, clipboard restored
+   afterward) and sent through the same pipeline the browser extension uses
+   (`/api/segregate` then `/api/verify` per claim).
+3. The "Checking..." toast has **no timeout** - it stays up for however long
+   verification takes, however long that is.
+4. Once a real result (or an error/status message, e.g. "nothing selected"
+   or "backend not running") is ready, it replaces the toast's content.
+   Each claim is shown with a color-coded verdict (green = supported,
+   yellow = misrepresented, gray = unsupported, blue = outdated, red =
+   error) and a short explanation.
+5. From that point, the toast auto-dismisses after **20 seconds**, or can be
+   closed immediately with the **✕** button next to the title.
+
+## Why Shift+F9, not plain F9
+
+The hotkey is registered as a listener on the bare F9 keycode
+(`keyboard.on_press_key`), not a `Shift+F9` key-combination match - on at
+least one test machine, bare F9 alone never reached the keyboard hook at
+all (likely intercepted by the laptop's Fn-row driver for a media/
+brightness function), so in practice the only way to generate a real F9
+keycode on that hardware was to hold Shift down too. If your F9 key isn't
+intercepted like that, plain F9 alone should trigger it as well.

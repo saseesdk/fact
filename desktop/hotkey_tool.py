@@ -1,298 +1,384 @@
-"""Fact Check — desktop hotkey tool (issue #19: "the app should work
-everywhere", not just the browser).
+"""Standalone desktop fact-check tool (issue #19: works outside the browser).
 
-A Chrome extension can only ever see inside the browser itself — there is
-no extension API that reaches into Word, Notepad, a PDF reader, or any
-other application. Getting the same "select text, get a verdict" behavior
-everywhere else needs a separate, OS-level background program instead.
-That's what this is.
+Select text in any Windows application, press Shift+F9, get a verdict for
+each checkable claim in a sliding toast at the bottom-right of the screen.
+Reuses the same Flask backend (src/app.py) the browser extension and web UI
+call - /api/segregate then /api/verify per claim - so there's no duplicated
+verification logic, just a new front door.
 
-Deliberately isolated from the rest of this repo: this only talks to
-src/app.py over plain HTTP (the same POST /api/segregate and
-POST /api/verify calls the browser extension and web UI already use) — it
-never imports any of the NLI/retrieval code directly, so running this
-never needs torch/transformers/spacy installed, just the light
-dependencies in requirements.txt. Backend and this tool can even live on
-different machines on the same network with no code change here.
-
-Requires the backend already running:
-    venv\\Scripts\\python src\\app.py
-
-Usage: run this script (or the packaged .exe — see README.md). It sits
-quietly in the system tray. Select text in any application — Word,
-Notepad, a PDF reader, a browser, anywhere — press the hotkey (default
-Ctrl+Alt+F), and a small popup near the corner of the screen shows the
-verdict for each checkable claim found in the selection.
+Run src/app.py first (this only calls it over HTTP, doesn't start it).
 """
 
-import queue
-import threading
+import html
+import socket
+import sys
 import time
-import tkinter as tk
-from tkinter import font as tkfont
 
 import keyboard
 import pyperclip
-import pystray
 import requests
-from PIL import Image, ImageDraw
+from PySide6.QtCore import Qt, QObject, Signal, QPropertyAnimation, QEasingCurve, QTimer, QPoint, QSize
+from PySide6.QtGui import QIcon, QPixmap, QPainter, QColor, QFont
+from PySide6.QtWidgets import (
+    QApplication, QWidget, QLabel, QVBoxLayout, QHBoxLayout, QPushButton,
+    QGraphicsOpacityEffect, QSystemTrayIcon, QMenu,
+)
 
-API_BASE = "http://127.0.0.1:5000"
-HOTKEY = "ctrl+alt+f"
+BACKEND = "http://127.0.0.1:5000"
+HOTKEY = "shift+f9"
+DEBOUNCE_SECONDS = 0.5
+CLIPBOARD_WAIT_SECONDS = 0.2
+MAX_CLAIMS_SHOWN = 4
 
-# How long to wait after simulating Ctrl+C before reading the clipboard.
-# Ctrl+C isn't instant — the target application needs a moment to actually
-# populate the clipboard before we read it back. Confirmed directly that
-# reading immediately after keyboard.send() sometimes still returns the
-# *previous* clipboard contents, not the freshly selected text.
-CLIPBOARD_GRAB_DELAY = 0.15
+MARGIN = 20
+WIDTH = 360
+SLIDE_MS = 350
+HOLD_MS = 20000
 
-VERDICT_STYLES = {
-    "supported": {"bg": "#dff2e4", "border": "#2f6f4e", "fg": "#1f5238"},
-    "misrepresented": {"bg": "#f7dede", "border": "#a13d3d", "fg": "#7a2626"},
-    "unsupported": {"bg": "#f1efe5", "border": "#9a8b4f", "fg": "#6b5f30"},
+_SINGLE_INSTANCE_PORT = 51987
+_singleton_socket = None
+
+VERDICT_COLORS = {
+    "supported": "#3fb950",
+    "misrepresented": "#e3b341",
+    "unsupported": "#8b949e",
+    "outdated": "#58a6ff",
+    "error": "#f85149",
 }
-DEFAULT_STYLE = {"bg": "#eceae2", "border": "#63695f", "fg": "#1c2321"}
 
-# All communication from the hotkey-listener thread (keyboard runs each
-# hotkey callback on its own worker thread, per its own docs, precisely so
-# a callback can safely block on network calls) into the Tk GUI thread goes
-# through this queue. Tkinter widgets must only ever be touched from the
-# thread running mainloop() - polling a queue from a repeating root.after()
-# call is the standard safe pattern, rather than calling Tk methods
-# directly from the hotkey thread.
-event_queue = queue.Queue()
+
+def _acquire_single_instance_lock():
+    global _singleton_socket
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        s.bind(("127.0.0.1", _SINGLE_INSTANCE_PORT))
+    except OSError:
+        s.close()
+        return False
+    _singleton_socket = s
+    return True
+
+
+def _escape(text):
+    return html.escape(str(text))
+
+
+class Toast(QWidget):
+    """A single sliding card. Content can be replaced in place while it's
+    showing (used to turn a "Checking..." toast into the real result)."""
+
+    def __init__(self):
+        super().__init__()
+        self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setFixedWidth(WIDTH)
+        self.setStyleSheet(
+            """
+            QWidget#card { background-color: rgba(32, 32, 36, 235); border-radius: 12px; }
+            QLabel { color: white; background: transparent; }
+            QLabel#title { font-size: 13px; font-weight: 600; color: #c9d1d9; }
+            QLabel#body { font-size: 12px; }
+            QPushButton#closeBtn {
+                color: #8b949e; background: transparent; border: none; font-size: 13px;
+            }
+            QPushButton#closeBtn:hover { color: white; }
+            """
+        )
+        self._card = QWidget(self)
+        self._card.setObjectName("card")
+        self._layout = QVBoxLayout(self._card)
+        self._layout.setContentsMargins(16, 12, 16, 12)
+        self._layout.setSpacing(6)
+
+        header = QHBoxLayout()
+        header.setContentsMargins(0, 0, 0, 0)
+        self._title = QLabel("Fact Check")
+        self._title.setObjectName("title")
+        close_btn = QPushButton("✕")
+        close_btn.setObjectName("closeBtn")
+        close_btn.setFixedSize(18, 18)
+        close_btn.setCursor(Qt.PointingHandCursor)
+        close_btn.clicked.connect(self._dismiss)
+        header.addWidget(self._title, 1)
+        header.addWidget(close_btn, 0)
+        self._layout.addLayout(header)
+
+        self._opacity = QGraphicsOpacityEffect(self)
+        self.setGraphicsEffect(self._opacity)
+        self._opacity.setOpacity(0.0)
+
+        self._body_labels = []
+        self._dismiss_timer = None
+        self._anims = []
+        self._dismissing = False
+
+    def _clear_body(self):
+        for lbl in self._body_labels:
+            self._layout.removeWidget(lbl)
+            lbl.deleteLater()
+        self._body_labels = []
+
+    def set_html_lines(self, title, lines):
+        self._title.setText(title)
+        self._clear_body()
+        for line in lines:
+            lbl = QLabel(line)
+            lbl.setObjectName("body")
+            lbl.setWordWrap(True)
+            lbl.setTextFormat(Qt.RichText)
+            self._layout.addWidget(lbl)
+            self._body_labels.append(lbl)
+        # Deferred to the next event-loop tick: measuring sizeHint() in the
+        # same call that just added/removed labels sometimes returned a
+        # stale (too-short) height for wrapped rich-text content - the card
+        # then got positioned/sized for the OLD height and the new, taller
+        # content hung off the bottom of the screen instead of being fully
+        # visible. Giving Qt one tick to finish laying out the new labels
+        # before we measure fixes it.
+        QTimer.singleShot(0, self._apply_size_and_position)
+
+    def _apply_size_and_position(self):
+        self._card.adjustSize()
+        height = self._card.sizeHint().height()
+        self._card.setFixedSize(WIDTH, height)
+        self.setFixedSize(WIDTH, height)
+
+        screen = QApplication.primaryScreen().availableGeometry()
+        end_pos = QPoint(screen.width() - WIDTH - MARGIN, screen.height() - height - MARGIN)
+        self._end_pos = end_pos
+        if not self.isVisible():
+            self._start_pos = QPoint(end_pos.x(), screen.height())
+            self.move(self._start_pos)
+            self._slide_in_now()
+        else:
+            # already on screen and growing/shrinking - just keep it pinned
+            # to the same bottom-right anchor instead of re-sliding.
+            self.move(end_pos)
+
+    def _slide_in_now(self):
+        self.show()
+        slide = QPropertyAnimation(self, b"pos", self)
+        slide.setDuration(SLIDE_MS)
+        slide.setStartValue(self._start_pos)
+        slide.setEndValue(self._end_pos)
+        slide.setEasingCurve(QEasingCurve.OutCubic)
+        fade = QPropertyAnimation(self._opacity, b"opacity", self)
+        fade.setDuration(SLIDE_MS)
+        fade.setStartValue(0.0)
+        fade.setEndValue(1.0)
+        slide.start()
+        fade.start()
+        self._anims = [slide, fade]
+        # No auto-dismiss timer started here - callers decide: a
+        # "checking..." state stays up indefinitely (stop_dismiss_timer),
+        # a final result/message starts the 20s countdown (_restart_dismiss_timer).
+
+    def stop_dismiss_timer(self):
+        self._dismissing = False
+        if self._dismiss_timer is not None:
+            self._dismiss_timer.stop()
+
+    def _restart_dismiss_timer(self):
+        self._dismissing = False
+        if self._dismiss_timer is not None:
+            self._dismiss_timer.stop()
+        self._dismiss_timer = QTimer(self)
+        self._dismiss_timer.setSingleShot(True)
+        self._dismiss_timer.timeout.connect(self._dismiss)
+        self._dismiss_timer.start(HOLD_MS)
+
+    def _dismiss(self):
+        if self._dismissing:
+            return
+        self._dismissing = True
+        if self._dismiss_timer is not None:
+            self._dismiss_timer.stop()
+
+        screen = QApplication.primaryScreen().availableGeometry()
+        out_pos = QPoint(self._end_pos.x(), screen.height())
+        slide = QPropertyAnimation(self, b"pos", self)
+        slide.setDuration(SLIDE_MS)
+        slide.setStartValue(self.pos())
+        slide.setEndValue(out_pos)
+        slide.setEasingCurve(QEasingCurve.InCubic)
+        slide.finished.connect(self.close)
+        slide.start()
+        self._anims = [slide]
+
+
+class Bridge(QObject):
+    show_loading = Signal(str)
+    show_result = Signal(list, str)
+    show_message = Signal(str)
+
+
+def _format_claim_line(result):
+    verdict = result.get("verdict", "error")
+    color = VERDICT_COLORS.get(verdict, "#8b949e")
+    sentence = _escape(result.get("claim", ""))
+    explanation = _escape(result.get("explanation", ""))
+    confidence = result.get("confidence")
+    conf_text = f" ({confidence:.0%})" if isinstance(confidence, (int, float)) else ""
+    return (
+        f'<span style="color:{color}; font-weight:600;">{verdict.upper()}{conf_text}</span> '
+        f'&mdash; {sentence}<br>'
+        f'<span style="color:#8b949e; font-size:11px;">{explanation}</span>'
+    )
+
+
+def check_text(text, bridge):
+    try:
+        resp = requests.post(f"{BACKEND}/api/segregate", json={"text": text}, timeout=15)
+        resp.raise_for_status()
+        claims = resp.json().get("claims", [])
+    except requests.exceptions.ConnectionError:
+        bridge.show_message.emit("Backend not running - start src/app.py first.")
+        return
+    except Exception as e:
+        bridge.show_message.emit(f"Error reaching backend: {e}")
+        return
+
+    if not claims:
+        bridge.show_message.emit("No checkable factual claims found in the selection.")
+        return
+
+    lines = []
+    for entry in claims[:MAX_CLAIMS_SHOWN]:
+        sentence = entry["sentence"]
+        try:
+            vresp = requests.post(f"{BACKEND}/api/verify", json={"claim": sentence}, timeout=60)
+            vresp.raise_for_status()
+            result = vresp.json()
+        except Exception as e:
+            result = {"claim": sentence, "verdict": "error", "explanation": str(e)}
+        lines.append(_format_claim_line(result))
+
+    remaining = len(claims) - MAX_CLAIMS_SHOWN
+    title = f"{len(claims)} claim{'s' if len(claims) != 1 else ''} checked"
+    if remaining > 0:
+        lines.append(f'<span style="color:#8b949e; font-size:11px;">+{remaining} more not shown</span>')
+
+    bridge.show_result.emit(lines, title)
 
 
 def grab_selected_text():
-    """Simulate Ctrl+C to copy whatever is currently selected in the
-    foreground application, then read it back from the clipboard, and
-    restore whatever was on the clipboard before. This is the only
-    OS-agnostic way to reach "the current selection" outside a browser —
-    there is no universal "get selected text" API across every Windows
-    application, but Ctrl+C is honored almost universally."""
+    previous_clipboard = ""
     try:
-        previous = pyperclip.paste()
+        previous_clipboard = pyperclip.paste()
     except Exception:
-        previous = None
+        pass
+
     keyboard.send("ctrl+c")
-    time.sleep(CLIPBOARD_GRAB_DELAY)
-    text = pyperclip.paste()
+    time.sleep(CLIPBOARD_WAIT_SECONDS)
+
     try:
-        pyperclip.copy(previous or "")
+        current = pyperclip.paste()
     except Exception:
-        pass
-    return text
+        current = ""
+
+    if current and current != previous_clipboard:
+        try:
+            pyperclip.copy(previous_clipboard)
+        except Exception:
+            pass
+        return current
+    return None
 
 
-def verify_text(text, on_progress=None):
-    """Same segregate-then-verify-per-claim flow the browser extension
-    uses (extension/background.js's verifyTextWithProgress) — one call to
-    split the text into checkable claims, then one call per claim, so
-    progress can be reported as each one resolves instead of one opaque
-    multi-minute wait."""
-    seg = requests.post(f"{API_BASE}/api/segregate", json={"text": text}, timeout=30)
-    seg.raise_for_status()
-    seg_data = seg.json()
-    claims = [c["sentence"] for c in seg_data.get("claims", [])]
-    skipped = len(seg_data.get("non_claims", []))
-
-    results = []
-    total = len(claims)
-    if on_progress:
-        on_progress(0, total)
-    for claim in claims:
-        res = requests.post(f"{API_BASE}/api/verify", json={"claim": claim}, timeout=180)
-        res.raise_for_status()
-        results.append(res.json())
-        if on_progress:
-            on_progress(len(results), total)
-    return results, skipped
-
-
-def on_hotkey():
-    event_queue.put(("loading", None))
-    text = grab_selected_text()
-    if not text.strip():
-        event_queue.put(("error", "Nothing was selected (or copying it failed)."))
-        return
-    try:
-        results, skipped = verify_text(
-            text, on_progress=lambda done, total: event_queue.put(("progress", (done, total)))
-        )
-        event_queue.put(("result", (results, skipped)))
-    except requests.exceptions.RequestException:
-        event_queue.put((
-            "error",
-            "Could not reach the local Fact Check server.\nIs `python src\\app.py` running?",
-        ))
-
-
-# ---- Tkinter popup (built fresh each time, no window left behind) --------
-
-class ResultPopup:
-    def __init__(self, root):
-        self.root = root
-        self.window = None
-
-    def _new_window(self):
-        if self.window is not None:
-            self.window.destroy()
-        win = tk.Toplevel(self.root)
-        win.title("Fact Check")
-        win.attributes("-topmost", True)
-        win.configure(bg="#ffffff", highlightbackground="#d7dacd", highlightthickness=1)
-        win.geometry("+{}+{}".format(win.winfo_screenwidth() - 380, 40))
-        self.window = win
-        return win
-
-    def show_loading(self):
-        win = self._new_window()
-        tk.Label(
-            win, text="Finding checkable claims…", bg="#ffffff", fg="#63695f",
-            font=("Segoe UI", 10), padx=14, pady=14,
-        ).pack()
-
-    def show_progress(self, done, total):
-        if self.window is None:
-            return
-        for child in self.window.winfo_children():
-            child.destroy()
-        label = "No checkable claims found yet…" if total == 0 else (
-            f"Finished checking {total} claim(s)." if done >= total
-            else f"Checking claim {done + 1} of {total}…"
-        )
-        tk.Label(
-            self.window, text=label, bg="#ffffff", fg="#63695f",
-            font=("Segoe UI", 10), padx=14, pady=14,
-        ).pack()
-
-    def show_error(self, message):
-        win = self._new_window()
-        tk.Label(
-            win, text=f"Failed: {message}", bg="#ffffff", fg="#a13d3d",
-            font=("Segoe UI", 10), padx=14, pady=14, wraplength=340, justify="left",
-        ).pack()
-        win.after(6000, win.destroy)
-
-    def show_result(self, results, skipped):
-        win = self._new_window()
-        bold = tkfont.Font(family="Segoe UI", size=10, weight="bold")
-        header = tk.Frame(win, bg="#ffffff")
-        header.pack(fill="x", padx=12, pady=(10, 4))
-        tk.Label(header, text="Fact Check", bg="#ffffff", font=bold).pack(side="left")
-        tk.Button(
-            header, text="✕", command=win.destroy, bg="#ffffff", bd=0,
-            fg="#63695f", font=("Segoe UI", 11), cursor="hand2",
-        ).pack(side="right")
-
-        body = tk.Frame(win, bg="#ffffff")
-        body.pack(fill="both", expand=True, padx=12, pady=(0, 10))
-
-        if not results:
-            tk.Label(
-                body, text="No checkable factual claims found in the selection.",
-                bg="#ffffff", fg="#63695f", font=("Segoe UI", 9, "italic"), wraplength=340, justify="left",
-            ).pack(anchor="w")
-        else:
-            for r in results:
-                style = VERDICT_STYLES.get(r["verdict"], DEFAULT_STYLE)
-                card = tk.Frame(body, bg="#ffffff")
-                card.pack(fill="x", pady=(0, 8))
-                tk.Label(
-                    card, text=r["claim"], bg="#ffffff", font=bold,
-                    wraplength=340, justify="left", anchor="w",
-                ).pack(fill="x")
-                verdict_box = tk.Frame(card, bg=style["bg"], highlightbackground=style["border"],
-                                        highlightthickness=0, bd=0)
-                verdict_box.pack(fill="x", pady=(3, 0))
-                tk.Frame(verdict_box, bg=style["border"], width=3).pack(side="left", fill="y")
-                inner = tk.Frame(verdict_box, bg=style["bg"])
-                inner.pack(side="left", fill="both", expand=True, padx=8, pady=6)
-                tk.Label(
-                    inner, text=f"{r['verdict'].upper()} ({r['confidence']})",
-                    bg=style["bg"], fg=style["fg"], font=("Segoe UI", 8, "bold"),
-                ).pack(anchor="w")
-                tk.Label(
-                    inner, text=r["explanation"], bg=style["bg"], fg=style["fg"],
-                    font=("Segoe UI", 9), wraplength=300, justify="left",
-                ).pack(anchor="w")
-                sources = r.get("sources") or []
-                if sources:
-                    src_text = ", ".join(s["title"] for s in sources if s.get("title"))
-                    tk.Label(
-                        inner, text=f"Source: {src_text}", bg=style["bg"], fg=style["fg"],
-                        font=("Segoe UI", 8), wraplength=300, justify="left",
-                    ).pack(anchor="w", pady=(2, 0))
-
-        if skipped:
-            tk.Label(
-                body, text=f"{skipped} sentence(s) skipped as opinion/not checkable.",
-                bg="#ffffff", fg="#63695f", font=("Segoe UI", 8, "italic"),
-            ).pack(anchor="w", pady=(4, 0))
-
-
-def poll_queue(root, popup):
-    try:
-        while True:
-            action, payload = event_queue.get_nowait()
-            if action == "loading":
-                popup.show_loading()
-            elif action == "progress":
-                popup.show_progress(*payload)
-            elif action == "result":
-                popup.show_result(*payload)
-            elif action == "error":
-                popup.show_error(payload)
-    except queue.Empty:
-        pass
-    root.after(100, poll_queue, root, popup)
-
-
-# ---- Tray icon ------------------------------------------------------------
-
-def _make_tray_image():
-    img = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
-    d = ImageDraw.Draw(img)
-    d.rounded_rectangle([4, 4, 60, 60], radius=16, fill=(47, 111, 78, 255))
-    d.line([(17, 34), (28, 45), (47, 20)], fill=(255, 255, 255, 255), width=6, joint="curve")
-    return img
-
-
-def run_tray(root):
-    def on_check_now(icon, item):
-        threading.Thread(target=on_hotkey, daemon=True).start()
-
-    def on_quit(icon, item):
-        icon.stop()
-        root.after(0, root.quit)
-
-    icon = pystray.Icon(
-        "fact_check",
-        _make_tray_image(),
-        f"Fact Check (hotkey: {HOTKEY})",
-        menu=pystray.Menu(
-            pystray.MenuItem("Check clipboard/selection now", on_check_now),
-            pystray.MenuItem("Quit", on_quit),
-        ),
-    )
-    icon.run()
+def _tray_icon_pixmap():
+    pixmap = QPixmap(64, 64)
+    pixmap.fill(Qt.transparent)
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.Antialiasing)
+    painter.setBrush(QColor("#3fb950"))
+    painter.setPen(Qt.NoPen)
+    painter.drawEllipse(2, 2, 60, 60)
+    painter.setPen(QColor("white"))
+    font = QFont()
+    font.setBold(True)
+    font.setPointSize(28)
+    painter.setFont(font)
+    painter.drawText(pixmap.rect(), Qt.AlignCenter, "F")
+    painter.end()
+    return pixmap
 
 
 def main():
-    root = tk.Tk()
-    root.withdraw()  # no main window — tray icon + on-demand popups only
+    if not _acquire_single_instance_lock():
+        print("Fact Check hotkey tool is already running.")
+        sys.exit(0)
 
-    popup = ResultPopup(root)
-    root.after(100, poll_queue, root, popup)
+    app = QApplication(sys.argv)
+    app.setQuitOnLastWindowClosed(False)
 
-    keyboard.add_hotkey(HOTKEY, on_hotkey)
+    bridge = Bridge()
+    current_toast = {"widget": None}
 
-    tray_thread = threading.Thread(target=run_tray, args=(root,), daemon=True)
-    tray_thread.start()
+    def _get_toast():
+        widget = current_toast["widget"]
+        if widget is None or not widget.isVisible():
+            widget = Toast()
+            current_toast["widget"] = widget
+        return widget
 
-    print(f"Fact Check hotkey tool running. Press {HOTKEY} after selecting text anywhere.")
-    root.mainloop()
+    def on_show_loading(text):
+        toast = _get_toast()
+        toast.set_html_lines("Fact Check", [f'<span style="color:#8b949e;">{_escape(text)}</span>'])
+        # "Checking..." stays up no matter how long the backend takes -
+        # only a real result or message starts the auto-dismiss countdown.
+        toast.stop_dismiss_timer()
+
+    def on_show_result(lines, title):
+        toast = _get_toast()
+        toast.set_html_lines(title, lines)
+        toast._restart_dismiss_timer()
+
+    def on_show_message(text):
+        on_show_result([f'<span style="color:#8b949e;">{_escape(text)}</span>'], "Fact Check")
+
+    bridge.show_loading.connect(on_show_loading)
+    bridge.show_result.connect(on_show_result)
+    bridge.show_message.connect(on_show_message)
+
+    last_trigger = [0.0]
+
+    def on_hotkey(_event):
+        # Runs on keyboard's own listener thread. Clipboard grab and the
+        # blocking HTTP calls happen here; only bridge.emit() touches Qt.
+        now = time.monotonic()
+        if now - last_trigger[0] < DEBOUNCE_SECONDS:
+            return
+        last_trigger[0] = now
+
+        # Show something immediately, no matter what - the popup firing on
+        # every press is mandatory, independent of how long the backend
+        # call ends up taking.
+        bridge.show_loading.emit("Checking selected text...")
+
+        text = grab_selected_text()
+        if not text:
+            bridge.show_message.emit("Nothing new selected - select text, then press Shift+F9.")
+            return
+        check_text(text, bridge)
+
+    # on_press_key fires on the F9 keycode itself, regardless of what other
+    # modifiers keyboard's own state-tracking currently believes are held -
+    # add_hotkey's exact-combo matching proved unreliable on this machine
+    # (same failure mode we already hit with bare F9). On this hardware,
+    # bare F9 alone never reaches the hook at all (intercepted by the
+    # laptop's Fn-row driver), so in practice this only ever fires when the
+    # user is holding Shift too - i.e. Shift+F9.
+    keyboard.on_press_key("f9", on_hotkey, suppress=False)
+
+    tray = QSystemTrayIcon(QIcon(_tray_icon_pixmap()), app)
+    tray.setToolTip("Fact Check (Shift+F9)")
+    menu = QMenu()
+    menu.addAction("Quit", app.quit)
+    tray.setContextMenu(menu)
+    tray.show()
+
+    print(f"Fact Check hotkey tool running. Select text anywhere, press {HOTKEY}.")
+    sys.exit(app.exec())
 
 
 if __name__ == "__main__":
