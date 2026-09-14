@@ -38,6 +38,7 @@ the first download.
 5. If issues are found, fix them on the feature branch, retest, and merge the changes back into develop.
 6. Once both admins agree on the changes, merge develop into master.
 7. master is then deployed to production.
+8. The created feature branch should now be deleted
 
 #### Rules
 - Do not develop directly on master or develop.
